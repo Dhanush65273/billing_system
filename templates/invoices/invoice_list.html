@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Invoices{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Invoices</h2>
+
+<a href="{% url 'invoice_add' %}" class="btn btn-primary mb-3">Create Invoice</a>
+
+<table class="table table-bordered">
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Customer</th>
+        <th>Date</th>
+        <th>Total Amount</th>
+        <th>Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for inv in invoices %}
+        <tr>
+            <td>{{ inv.id }}</td>
+            <td>{{ inv.customer.name }}</td>
+            <td>{{ inv.invoice_date }}</td>
+            <td>{{ inv.total_amount }}</td>
+            <td>
+                <a href="{% url 'invoice_detail' inv.id %}" class="btn btn-sm btn-info">View</a>
+                <a href="{% url 'invoice_delete' inv.id %}" class="btn btn-sm btn-danger"
+                   onclick="return confirm('Delete this invoice?');">
+                    Delete
+                </a>
+            </td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="5">No invoices found.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

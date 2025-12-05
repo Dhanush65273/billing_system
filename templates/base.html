@@ -10,6 +10,8 @@
     <nav class="mb-3">
         <a href="{% url 'customer_list' %}" class="btn btn-outline-primary btn-sm">Customers</a>
         <a href="{% url 'product_list' %}" class="btn btn-outline-secondary btn-sm">Products</a>
+        <a href="{% url 'invoice_list' %}" class="btn btn-outline-secondary btn-sm">Invoices</a>
+        <a href="{% url 'payment_list' %}" class="btn btn-outline-secondary btn-sm">payments</a>
     </nav>
     {% block content %}{% endblock %}
 </div>

@@ -1,19 +1,25 @@
 from django.db import models
+from invoices.models import Invoice
+
+PAYMENT_METHODS = (
+    ("cash", "Cash"),
+    ("card", "Card"),
+    ("upi", "UPI"),
+)
+
+PAYMENT_STATUS = (
+    ("success", "Success"),
+    ("pending", "Pending"),
+    ("failed", "Failed"),
+)
+
 
 class Payment(models.Model):
-    METHOD_CHOICES = [
-        ('CASH', 'Cash'),
-        ('CARD', 'Card'),
-        ('UPI', 'UPI'),
-        ('OTHER', 'Other'),
-    ]
-
-    invoice = models.ForeignKey('invoices.Invoice', on_delete=models.CASCADE, related_name='payments')
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    payment_date = models.DateField(auto_now_add=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    payment_date = models.DateField()
-    method = models.CharField(max_length=10, choices=METHOD_CHOICES, default='CASH')
-    notes = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    method = models.CharField(max_length=10, choices=PAYMENT_METHODS, default="cash")
+    status = models.CharField(max_length=10, choices=PAYMENT_STATUS, default="success")
 
     def _str_(self):
-        return f"Payment {self.amount}"
+        return f"Payment {self.id} for Invoice {self.invoice_id}"

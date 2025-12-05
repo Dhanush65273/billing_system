@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Invoice {{ invoice.id }}{% endblock %}
+
+{% block content %}
+<h2>Invoice #{{ invoice.id }}</h2>
+
+<p><strong>Customer:</strong> {{ invoice.customer.name }}</p>
+<p><strong>Date:</strong> {{ invoice.invoice_date }}</p>
+
+<h4>Items</h4>
+<table class="table table-bordered">
+    <thead>
+    <tr>
+        <th>#</th>
+        <th>Product</th>
+        <th>Qty</th>
+        <th>Price</th>
+        <th>Amount</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for item in invoice.items.all %}
+        <tr>
+            <td>{{ forloop.counter }}</td>
+            <td>{{ item.product.name }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.price }}</td>
+            <td>{{ item.amount }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<h4 class="text-end">Total: {{ invoice.total_amount }}</h4>
+
+<!-- ITHU THA ADD PAYMENT BUTTON -->
+<a href="{% url 'payment_add' %}?invoice_id={{ invoice.id }}" class="btn btn-primary mt-3">
+    Add Payment
+</a>
+
+<a href="{% url 'invoice_list' %}" class="btn btn-secondary mt-3">
+    Back to Invoices
+</a>
+{% endblock %}

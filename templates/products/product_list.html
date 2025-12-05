@@ -1,34 +1,35 @@
+
 {% extends 'base.html' %}
-{% block title %}Products{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between mb-3">
-    <h2>Products</h2>
-    <a href="{% url 'product_add' %}" class="btn btn-primary">Add Product</a>
-</div>
+
+<h2>Products</h2>
+
+<a href="{% url 'product_add' %}" class="btn btn-primary mb-3">Add Product</a>
 
 <table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>#</th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th>Active</th><th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for p in products %}
-        <tr>
-            <td>{{ forloop.counter }}</td>
-            <td>{{ p.name }}</td>
-            <td>{{ p.sku }}</td>
-            <td>{{ p.unit_price }}</td>
-            <td>{{ p.stock_qty }}</td>
-            <td>{{ p.is_active }}</td>
-            <td>
-                <a href="{% url 'product_edit' p.id %}" class="btn btn-sm btn-warning">Edit</a>
-                <a href="{% url 'product_delete' p.id %}" class="btn btn-sm btn-danger">Delete</a>
-            </td>
-        </tr>
-    {% empty %}
-        <tr><td colspan="7">No products yet.</td></tr>
-    {% endfor %}
-    </tbody>
+<thead>
+<tr>
+    <th>ID</th>
+    <th>Name</th>
+    <th>Price</th>
+    <th>Stock</th>
+    <th>Actions</th>
+</tr>
+</thead>
+<tbody>
+{% for p in products %}
+<tr>
+    <td>{{ p.id }}</td>
+    <td>{{ p.name }}</td>
+    <td>{{ p.product_price }}</td>
+    <td>{{ p.stock }}</td>
+    <td>
+        <a href="{% url 'product_edit' p.id %}" class="btn btn-warning">Edit</a>
+        <a href="{% url 'product_delete' p.id %}" class="btn btn-danger">Delete</a>
+    </td>
+</tr>
+{% endfor %}
+</tbody>
 </table>
+
 {% endblock %}

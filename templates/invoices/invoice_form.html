@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Create Invoice{% endblock %}
+
+{% block content %}
+<h2>Create Invoice</h2>
+
+<form method="post">
+    {% csrf_token %}
+
+    <!-- Customer select -->
+    {{ form.as_p }}
+
+    <h4>Products</h4>
+
+    <div id="items">
+        <div class="row mb-2 item">
+            <div class="col-md-6">
+                <select name="product" class="form-select">
+                    {% for p in products %}
+                    <option value="{{ p.id }}">{{ p.name }} - ₹{{ p.product_price }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <input type="number" name="quantity" class="form-control" placeholder="Qty" min="1">
+            </div>
+        </div>
+    </div>
+
+    <button type="button" class="btn btn-outline-secondary mb-3" onclick="addItem()">
+        + Add another product
+    </button>
+
+    <br>
+    <button type="submit" class="btn btn-success">Save Invoice</button>
+    <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Cancel</a>
+</form>
+
+<script>
+function addItem() {
+    const firstItem = document.querySelector('#items .item');
+    const clone = firstItem.cloneNode(true);
+    // clear quantity
+    clone.querySelector('input[name="quantity"]').value = '';
+    document.getElementById('items').appendChild(clone);
+}
+</script>
+{% endblock %}
