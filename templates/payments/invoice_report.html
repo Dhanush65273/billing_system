@@ -1,106 +1,65 @@
 {% extends 'base.html' %}
-{% block title %}Invoice-wise Report{% endblock %}
+{% block title %}Invoice Report{% endblock %}
 
 {% block content %}
-<h2>Invoice-wise Report</h2>
-
-
-
-
-<!-- Sub Navigation for Reports -->
-
-<ul class="nav nav-tabs mb-4">
-    <li class="nav-item">
-        <a class="nav-link" href="{% url 'payment_report' %}">Payments</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{% url 'customer_report' %}">Customer Wise</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{% url 'product_report' %}">Product Wise</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active" href="{% url 'invoice_report' %}">Invoice Wise</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{% url 'monthly_report' %}">Monthly Summary</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{% url 'outstanding_report' %}">Outstanding</a>
-    </li>
-</ul>
-
-<a href="{% url 'invoice-report-csv' %}?customer_id={{ selected_customer_id }}&date_from={{ date_from }}&date_to={{ date_to }}"
-    class="btn btn-outline-primary">
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Invoice Report</h2>
+  <a href="{% url 'invoice-report-csv' %}?date_from={{ date_from }}&date_to={{ date_to }}"
+     class="btn btn-outline-primary">
     Download CSV
-</a>
+  </a>
+</div>
 
-<form method="get" class="row g-3 mb-4 mt-3">
-    <div class="col-md-3">
-        <label class="form-label">Customer</label>
-        <select name="customer_id" class="form-select">
-            <option value="">-- All Customers --</option>
-            {% for c in customers %}
-            <option value="{{ c.id }}" {% if selected_customer_id == c.id %}selected{% endif %}>
-                {{ c.name }}
-            </option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <div class="col-md-3">
-        <label class="form-label">From Date</label>
-        <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
-    </div>
-
-    <div class="col-md-3">
-        <label class="form-label">To Date</label>
-        <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
-    </div>
-
-    <div class="col-md-2 d-flex align-items-end">
-        <button type="submit" class="btn btn-primary w-100">Filter</button>
-    </div>
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-3">
+    <label class="form-label">From date</label>
+    <input type="date" name="date_from" value="{{ date_from }}" class="form-control">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">To date</label>
+    <input type="date" name="date_to" value="{{ date_to }}" class="form-control">
+  </div>
+  <div class="col-md-2 d-flex align-items-end">
+    <button class="btn btn-outline-primary w-100" type="submit">Filter</button>
+  </div>
+  <div class="col-md-2 d-flex align-items-end">
+    <a href="{% url 'invoice-report' %}" class="btn btn-outline-secondary w-100">Clear</a>
+  </div>
 </form>
 
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>#</th>
-            <th>Invoice</th>
-            <th>Customer</th>
-            <th>Date</th>
-            <th>Total Amount</th>
-            <th>Paid Amount</th>
-            <th>Balance</th>
-            <th>Status</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for row in summary %}
-        <tr>
-            <td>{{ forloop.counter }}</td>
-            <td>{{ row.invoice_id }}</td>
-            <td>{{ row.customer_name }}</td>
-            <td>{{ row.invoice_date }}</td>
-            <td>{{ row.total_amount }}</td>
-            <td>{{ row.paid_amount }}</td>
-            <td>{{ row.balance }}</td>
-            
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="8" class="text-center">No invoices found.</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="mb-3">
+  <strong>Total Invoices (₹):</strong> {{ totals.total_invoices }} |
+  <strong>Total Paid (₹):</strong> {{ totals.total_paid }} |
+  <strong>Total Balance (₹):</strong> {{ totals.total_balance }}
+</div>
 
-<h4 class="mt-4">Summary</h4>
-<ul>
-    <li>Total Invoices: {{ total_invoices }}</li>
-    <li>Total Invoice Amount: ₹{{ total_invoice_amount }}</li>
-    <li>Total Paid: ₹{{ total_paid }}</li>
-    <li>Total Balance: ₹{{ total_balance }}</li>
-</ul>
-{% endblock %}
+<table class="table table-striped align-middle">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Date</th>
+      <th>Customer</th>
+      <th>Total (₹)</th>
+      <th>Paid (₹)</th>
+      <th>Balance (₹)</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for inv in invoices %}
+    <tr>
+      <td>{{ inv.id }}</td>
+      <td>{{ inv.date|date:"d-m-Y" }}</td>
+      <td>{{ inv.customer.name }}</td>
+      <td>{{ inv.total_amount }}</td>
+      <td>{{ inv.amount_paid }}</td>
+      <td>{{ inv.balance }}</td>
+      <td>{{ inv.get_status_display }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="7" class="text-center">No invoices found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>{% endblock %}

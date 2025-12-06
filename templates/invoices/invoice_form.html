@@ -1,48 +1,68 @@
 {% extends 'base.html' %}
-{% block title %}Create Invoice{% endblock %}
+{% block title %}{{ title }}{% endblock %}
 
 {% block content %}
-<h2>Create Invoice</h2>
+<h2>{{ title }}</h2>
 
 <form method="post">
-    {% csrf_token %}
+  {% csrf_token %}
 
-    <!-- Customer select -->
-    {{ form.as_p }}
-
-    <h4>Products</h4>
-
-    <div id="items">
-        <div class="row mb-2 item">
-            <div class="col-md-6">
-                <select name="product" class="form-select">
-                    {% for p in products %}
-                    <option value="{{ p.id }}">{{ p.name }} - ₹{{ p.product_price }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <input type="number" name="quantity" class="form-control" placeholder="Qty" min="1">
-            </div>
-        </div>
+  <div class="row mb-3">
+    <div class="col-md-4">
+      <label class="form-label">Customer</label>
+      {{ form.customer }}
     </div>
+    <div class="col-md-4">
+      <label class="form-label">Invoice Date</label>
+      {{ form.date }}
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Tax %</label>
+      {{ form.tax_percent }}
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Discount (₹)</label>
+      {{ form.discount_amount }}
+    </div>
+  </div>
 
-    <button type="button" class="btn btn-outline-secondary mb-3" onclick="addItem()">
-        + Add another product
-    </button>
+  <div class="row mb-3">
+    <div class="col-md-3">
+      <label class="form-label">Status</label>
+      {{ form.status }}
+    </div>
+  </div>
 
-    <br>
-    <button type="submit" class="btn btn-success">Save Invoice</button>
-    <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Cancel</a>
-</form>
+  <h5 class="mt-4">Items</h5>
 
-<script>
-function addItem() {
-    const firstItem = document.querySelector('#items .item');
-    const clone = firstItem.cloneNode(true);
-    // clear quantity
-    clone.querySelector('input[name="quantity"]').value = '';
-    document.getElementById('items').appendChild(clone);
-}
-</script>
-{% endblock %}
+  {{ formset.management_form }}
+  <table class="table table-bordered align-middle">
+    <thead class="table-light">
+      <tr>
+        <th style="width:40px;">#</th>
+        <th>Product</th>
+        <th style="width:120px;">Quantity</th>
+        <th style="width:150px;">Unit price (₹)</th>
+        <th style="width:80px;">Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in formset %}
+      <tr>
+        <td>{{ forloop.counter }}</td>
+        <td>{{ f.product }}</td>
+        <td>{{ f.quantity }}</td>
+        <td>{{ f.unit_price }}</td>
+        <td>
+          {% if f.instance.pk %}
+            {{ f.DELETE }}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <button type="submit" class="btn btn-success">Create Invoice</button>
+  <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Cancel</a>
+</form>{% endblock %}

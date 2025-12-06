@@ -1,32 +1,83 @@
 {% extends 'base.html' %}
 {% block title %}Customers{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between mb-3">
-    <h2>Customers</h2>
-    <a href="{% url 'customer_add' %}" class="btn btn-primary">Add Customer</a>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Customers</h2>
+  <a href="{% url 'customer_add' %}" class="btn btn-primary">Add Customer</a>
 </div>
 
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>#</th><th>Name</th><th>Phone</th><th>Email</th><th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for c in customers %}
-        <tr>
-            <td>{{ forloop.counter }}</td>
-            <td>{{ c.name }}</td>
-            <td>{{ c.phone }}</td>
-            <td>{{ c.email }}</td>
-            <td>
-                <a href="{% url 'customer_edit' c.id %}" class="btn btn-sm btn-warning">Edit</a>
-                <a href="{% url 'customer_delete' c.id %}" class="btn btn-sm btn-danger">Delete</a>
-            </td>
-        </tr>
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <input type="text" name="search" class="form-control"
+           placeholder="Search by name"
+           value="{{ search }}">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-outline-primary w-100">Search</button>
+  </div>
+  <div class="col-md-2">
+    <a href="{% url 'customer_list' %}" class="btn btn-outline-secondary w-100">Clear</a>
+  </div>
+</form>
+
+<table class="table table-bordered table-striped">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Name</th>
+      <th>Phone</th>
+      <th>Email</th>
+      <th>Address</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in page_obj %}
+    <tr>
+      <td>{{ c.id }}</td>
+      <td>{{ c.name }}</td>
+      <td>{{ c.phone }}</td>
+      <td>{{ c.email }}</td>
+      <td>{{ c.address}}</td>
+      <td>
+        <a href="{% url 'customer_edit' c.id %}" class="btn btn-sm btn-warning">Edit</a>
+        <a href="{% url 'customer_delete' c.id %}" class="btn btn-sm btn-danger">Delete</a>
+      </td>
+    </tr>
     {% empty %}
-        <tr><td colspan="5">No customers yet.</td></tr>
+    <tr>
+      <td colspan="5" class="text-center">No customers found.</td>
+    </tr>
     {% endfor %}
-    </tbody>
+  </tbody>
 </table>
+
+<!-- Pagination -->
+<nav aria-label="Customer pages">
+  <ul class="pagination">
+    {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&search={{ search }}">Previous</a>
+      </li>
+    {% else %}
+      <li class="page-item disabled"><span class="page-link">Previous</span></li>
+    {% endif %}
+
+    <li class="page-item disabled">
+      <span class="page-link">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+      </span>
+    </li>
+
+    {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.next_page_number }}&search={{ search }}">Next</a>
+      </li>
+    {% else %}
+      <li class="page-item disabled"><span class="page-link">Next</span></li>
+    {% endif %}
+  </ul>
+</nav>
+
 {% endblock %}

@@ -80,7 +80,7 @@ WSGI_APPLICATION = 'billing_system.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'billing_db',
+        'NAME': 'billing_system_final',
         'USER': 'postgres',
         'PASSWORD': 'postgres123',
         'HOST': 'localhost',

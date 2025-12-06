@@ -4,41 +4,56 @@
 {% block content %}
 <h2>Invoice #{{ invoice.id }}</h2>
 
+<p><strong>Date:</strong> {{ invoice.date|date:"M d, Y" }}</p>
 <p><strong>Customer:</strong> {{ invoice.customer.name }}</p>
-<p><strong>Date:</strong> {{ invoice.invoice_date }}</p>
+<p><strong>Status:</strong> {{ invoice.get_status_display }}</p>
 
-<h4>Items</h4>
+<h4 class="mt-4">Items</h4>
 <table class="table table-bordered">
-    <thead>
+  <thead>
     <tr>
-        <th>#</th>
-        <th>Product</th>
-        <th>Qty</th>
-        <th>Price</th>
-        <th>Amount</th>
+      <th>#</th>
+      <th>Product</th>
+      <th>Qty</th>
+      <th>Unit price</th>
+      <th>Line total</th>
     </tr>
-    </thead>
-    <tbody>
+  </thead>
+  <tbody>
     {% for item in invoice.items.all %}
-        <tr>
-            <td>{{ forloop.counter }}</td>
-            <td>{{ item.product.name }}</td>
-            <td>{{ item.quantity }}</td>
-            <td>{{ item.price }}</td>
-            <td>{{ item.amount }}</td>
-        </tr>
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td>{{ item.product.name }}</td>
+      <td>{{ item.quantity }}</td>
+      <td>{{ item.unit_price }}</td>
+      <td>{{ item.line_total }}</td>
+    </tr>
     {% endfor %}
-    </tbody>
+  </tbody>
 </table>
 
-<h4 class="text-end">Total: {{ invoice.total_amount }}</h4>
-
-<!-- ITHU THA ADD PAYMENT BUTTON -->
-<a href="{% url 'payment_add' %}?invoice_id={{ invoice.id }}" class="btn btn-primary mt-3">
-    Add Payment
-</a>
-
-<a href="{% url 'invoice_list' %}" class="btn btn-secondary mt-3">
-    Back to Invoices
-</a>
+<div class="d-flex justify-content-end">
+  <div style="min-width:260px;">
+    <div class="d-flex justify-content-between">
+      <span>Subtotal:</span>
+      <span>{{ invoice.subtotal }}</span>
+    </div>
+    <div class="d-flex justify-content-between">
+      <span>Discount:</span>
+      <span>{{ invoice.discount_amount }}</span>
+    </div>
+    <div class="d-flex justify-content-between">
+      <span>Total:</span>
+      <span>{{ invoice.total_amount }}</span>
+    </div>
+    <div class="d-flex justify-content-between">
+      <span>Paid:</span>
+      <span>{{ invoice.amount_paid }}</span>
+    </div>
+    <div class="d-flex justify-content-between text-danger fw-bold">
+      <span>Balance:</span>
+      <span>{{ invoice.balance }}</span>
+    </div>
+  </div>
+</div>
 {% endblock %}

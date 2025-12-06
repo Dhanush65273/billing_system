@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Payments Report{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0">Payments Report</h2>
+
+  <!-- Sub Navigation for Reports -->
+
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link" href="{% url 'payment_report' %}">Payments</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{% url 'customer_report' %}">Customer Wise</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{% url 'product_report' %}">Product Wise</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active" href="{% url 'invoice_report' %}">Invoice Wise</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{% url 'monthly_report' %}">Monthly Summary</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{% url 'outstanding_report' %}">Outstanding</a>
+    </li>
+</ul>
+
+</div>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-3">
+    <label class="form-label">From date</label>
+    <input type="date" name="date_from" value="{{ date_from }}" class="form-control">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">To date</label>
+    <input type="date" name="date_to" value="{{ date_to }}" class="form-control">
+  </div>
+  <div class="col-md-2 d-flex align-items-end">
+    <button class="btn btn-outline-primary w-100" type="submit">Filter</button>
+  </div>
+  <div class="col-md-2 d-flex align-items-end">
+    <a href="{% url 'payment_report' %}" class="btn btn-outline-secondary w-100">Clear</a>
+  </div>
+</form>
+
+<div class="mb-3">
+  <strong>Total Amount (₹):</strong> {{ total_amount }}
+</div>
+
+<table class="table table-striped align-middle">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Date</th>
+      <th>Invoice</th>
+      <th>Customer</th>
+      <th>Method</th>
+      <th>Status</th>
+      <th>Amount (₹)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in payments %}
+    <tr>
+      <td>{{ forloop.counter }}</td>
+      <td>{{ p.date|date:"d-m-Y" }}</td>
+      <td>{{ p.invoice.id }}</td>
+      <td>{{ p.invoice.customer.name }}</td>
+      <td>{{ p.get_method_display }}</td>
+      <td>{{ p.get_status_display }}</td>
+      <td>{{ p.amount }}</td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="7" class="text-center">No payments found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

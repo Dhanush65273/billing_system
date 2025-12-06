@@ -17,13 +17,15 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.shortcuts import redirect
+from payments.views import dashboard
 
 def home(request):
     return redirect('customer_list')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', home, name='home'),
+    
+    path("",dashboard, name='dashboard'),
     path('customers/', include('customers.urls')),
     path('products/', include('products.urls')),
     path("invoices/", include("invoices.urls")),
