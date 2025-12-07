@@ -41,7 +41,7 @@
   <tbody>
     {% for inv in invoices %}
     <tr>
-      <td>{{ inv.id }}</td>
+      <td>{{ forloop.counter }}</td>
       <td>{{ inv.date|date:"M d, Y" }}</td>
       <td>{{ inv.customer.name }}</td>
       <td>{{ inv.total_amount }}</td>
