@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Delete Invoice #{{ invoice.id }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+  <h2 class="mb-3 text-danger">Delete Invoice #{{ invoice.id }}</h2>
+
+  <div class="alert alert-warning">
+      <strong>Warning!</strong> You are about to permanently delete this invoice.
+      <br>
+      This action cannot be undone.
+  </div>
+
+  <p><strong>Customer:</strong> {{ invoice.customer.name }}</p>
+  <p><strong>Date:</strong> {{ invoice.date|date:"M d, Y" }}</p>
+  <p><strong>Total Amount:</strong> ₹{{ invoice.total_amount }}</p>
+
+  <hr>
+
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">
+      Yes, Delete Invoice
+    </button>
+
+    <a href="{% url 'invoice_list' %}" class="btn btn-secondary">
+      Cancel
+    </a>
+  </form>
+
+</div>
+{% endblock %}

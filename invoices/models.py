@@ -5,7 +5,8 @@ from django.db import models
 from django.db.models import Sum, F
 
 from customers.models import Customer
-from products.models import Product
+from products.models import Product   # ✅ CORRECT import (remove `from .models import Product`)
+
 
 class InvoiceManager(models.Manager):
     """
@@ -15,6 +16,7 @@ class InvoiceManager(models.Manager):
     def get_queryset(self):
         # invoice_date alias = date column
         return super().get_queryset().alias(invoice_date=F("date"))
+
 
 class Invoice(models.Model):
     STATUS_CHOICES = [
@@ -29,11 +31,13 @@ class Invoice(models.Model):
     )
     date = models.DateField()
     tax_percent = models.DecimalField(
-        max_digits=5, decimal_places=2, default=0  # e.g. 18.00
+        max_digits=5, decimal_places=2, default=0  # e.g. 10.00
     )
     discount_amount = models.DecimalField(
         max_digits=10, decimal_places=2, default=0
     )
+    # NOTE: இந்த field optional storage காக மட்டும்.
+    # Calculations கீழே உள்ள properties use பண்ணிக்கலாம்.
     total_amount = models.DecimalField(
         max_digits=10, decimal_places=2, default=0
     )
@@ -46,7 +50,7 @@ class Invoice(models.Model):
     def __str__(self):
         return f"Invoice #{self.id} - {self.customer.name}"
 
-    # ---------- helpers ----------
+    # ---------- helpers (computed values) ----------
 
     @property
     def subtotal(self) -> Decimal:
@@ -57,8 +61,34 @@ class Invoice(models.Model):
         return total or Decimal("0")
 
     @property
+    def taxable_amount(self) -> Decimal:
+        """
+        Subtotal - discount. இதுக்கு தான் tax calculate பண்ணப் போறோம்.
+        """
+        amt = self.subtotal - (self.discount_amount or Decimal("0"))
+        if amt < 0:
+            amt = Decimal("0")
+        return amt
+
+    @property
+    def tax_amount(self) -> Decimal:
+        """
+        Tax = taxable_amount * (tax_percent / 100)
+        i.e. (subtotal − discount) * tax%.
+        """
+        return self.taxable_amount * (self.tax_percent / Decimal("100"))
+
+    @property
+    def grand_total(self) -> Decimal:
+        """
+        Final amount customer pay பண்ணணும்:
+        (subtotal − discount) + tax_amount
+        """
+        return self.taxable_amount + self.tax_amount
+
+    @property
     def amount_paid(self) -> Decimal:
-        """Total of successful payments."""
+        """Total of successful payments (status = paid)."""
         total = self.payments.filter(status="paid").aggregate(
             total=Sum("amount")
         )["total"]
@@ -66,32 +96,56 @@ class Invoice(models.Model):
 
     @property
     def balance(self) -> Decimal:
-        return self.total_amount - self.amount_paid
+        """
+        Balance = grand_total - amount_paid
+        DB field `total_amount` இல்லாமலே correct result கிடைக்கும்.
+        """
+        return self.grand_total - self.amount_paid
+    
+    @property
+    def total(self):
+        """
+        Full invoice total = sum(line totals) + tax - discount.
+        Used in invoice list and monthly reports.
+        """
+        from decimal import Decimal
+
+        subtotal = Decimal("0.00")
+
+        # items = related_name in InvoiceItem(invoice=..., related_name="items")
+        for item in self.items.all():
+            subtotal += item.line_total   # InvoiceItem property
+
+        tax_percent = self.tax_percent or 0
+        discount_amount = self.discount_amount or Decimal("0.00")
+
+        tax_amount = subtotal * Decimal(tax_percent) / Decimal("100")
+
+        return subtotal + tax_amount - discount_amount
 
     # ---------- business logic ----------
 
     def recompute_total(self):
         """
-        Recalculate invoice.total_amount from items + tax% - discount.
-        Call this after saving items.
+        Recalculate and store total_amount field from items + tax% - discount.
+        Use same logic as grand_total.
         """
-        sub = self.subtotal
-        tax = sub * (self.tax_percent / Decimal("100"))
-        self.total_amount = sub + tax - self.discount_amount
+        self.total_amount = self.grand_total
         self.save(update_fields=["total_amount"])
 
     def update_status_from_payments(self):
         """
-        Set status based on payments.
+        Set status based on payments total vs invoice grand_total.
         """
         if self.status == "cancelled":
             return
 
         paid = self.amount_paid
+        total = self.grand_total
 
         if paid <= 0:
             self.status = "unpaid"
-        elif paid < self.total_amount:
+        elif paid < total:
             self.status = "partial"
         else:
             self.status = "paid"

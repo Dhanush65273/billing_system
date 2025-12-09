@@ -1,68 +1,99 @@
 {% extends 'base.html' %}
-{% block title %}{{ title }}{% endblock %}
+{% load static %}
+
+{% block title %}Create Invoice{% endblock %}
 
 {% block content %}
-<h2>{{ title }}</h2>
+<h2>Create Invoice</h2>
 
 <form method="post">
-  {% csrf_token %}
+    {% csrf_token %}
 
-  <div class="row mb-3">
-    <div class="col-md-4">
-      <label class="form-label">Customer</label>
-      {{ form.customer }}
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label class="form-label">Customer</label>
+            {{ form.customer }}
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Invoice Date</label>
+            {{ form.date }}
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Tax %</label>
+            {{ form.tax_percent }}
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Discount (₹)</label>
+            {{ form.discount_amount }}
+        </div>
     </div>
-    <div class="col-md-4">
-      <label class="form-label">Invoice Date</label>
-      {{ form.date }}
-    </div>
-    <div class="col-md-2">
-      <label class="form-label">Tax %</label>
-      {{ form.tax_percent }}
-    </div>
-    <div class="col-md-2">
-      <label class="form-label">Discount (₹)</label>
-      {{ form.discount_amount }}
-    </div>
-  </div>
 
-  <div class="row mb-3">
-    <div class="col-md-3">
-      <label class="form-label">Status</label>
-      {{ form.status }}
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label class="form-label">Status</label>
+            {{ form.status }}
+        </div>
     </div>
-  </div>
 
-  <h5 class="mt-4">Items</h5>
+    <h4 class="mt-4">Items</h4>
 
-  {{ formset.management_form }}
-  <table class="table table-bordered align-middle">
-    <thead class="table-light">
-      <tr>
-        <th style="width:40px;">#</th>
-        <th>Product</th>
-        <th style="width:120px;">Quantity</th>
-        <th style="width:150px;">Unit price (₹)</th>
-        <th style="width:80px;">Delete</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for f in formset %}
-      <tr>
-        <td>{{ forloop.counter }}</td>
-        <td>{{ f.product }}</td>
-        <td>{{ f.quantity }}</td>
-        <td>{{ f.unit_price }}</td>
-        <td>
-          {% if f.instance.pk %}
-            {{ f.DELETE }}
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th style="width:40px;">#</th>
+                <th>Product</th>
+                <th style="width:120px;">Quantity</th>
+                <th style="width:150px;">Unit price (₹)</th>
+                <th style="width:70px;">Delete</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ items.management_form }}
+            {% for f in items.forms %}
+            <tr class="item-row">
+                <td>{{ forloop.counter }}</td>
 
-  <button type="submit" class="btn btn-success">Create Invoice</button>
-  <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Cancel</a>
-</form>{% endblock %}
+                <!-- PRODUCT SELECT -->
+                <td>
+    <select
+        name="{{ f.product.html_name }}"
+        id="{{ f.product.id_for_label }}"
+        class="form-select product-select">
+        <option value="">---------</option>
+        {% for p in products %}
+            <option value="{{ p.id }}" data-price="{{ p.product_price }}">
+                {{ p.name }}
+            </option>
+        {% endfor %}
+    </select>
+</td>
+
+
+                <!-- QUANTITY -->
+                <td>
+                    {{ f.quantity }}
+                </td>
+
+                <!-- UNIT PRICE -->
+                <td>
+                    {{ f.unit_price }}
+                </td>
+
+                <!-- DELETE (only for existing rows) -->
+                <td>
+                    {% if f.instance.pk %}
+                        {{ f.DELETE }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <button type="submit" class="btn btn-success">Create Invoice</button>
+    <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Cancel</a>
+</form>
+
+<!-- Our JS -->
+<script src="{% static 'invoices/js/invoice_form.js' %}"></script>
+{% endblock %}

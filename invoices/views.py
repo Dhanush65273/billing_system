@@ -1,76 +1,282 @@
 # invoices/views.py
-from django.db.models import Q
-from django.shortcuts import render, redirect, get_object_or_404
 
+from django.shortcuts import render, redirect, get_object_or_404
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
+
+from products.models import Product
 from .models import Invoice
 from .forms import InvoiceForm, InvoiceItemFormSet
+from .models import Invoice, InvoiceItem, Product
+from django.db.models import Sum, Value, DecimalField
+from django.db.models.functions import Coalesce
+
 from decimal import Decimal
-
-def invoice_list(request):
-    q = request.GET.get("q", "")
-
-    invoices = Invoice.objects.select_related("customer")
-
-    if q:
-        invoices = invoices.filter(
-            Q(customer__name__icontains=q) |
-            Q(id__icontains=q)
-        )
-
-    invoices = invoices.order_by("-date")
-
-    context = {
-        "invoices": invoices,
-        "q": q,
-    }
-    return render(request, "invoices/invoice_list.html", context)
-
 
 def invoice_create(request):
     if request.method == "POST":
         form = InvoiceForm(request.POST)
         formset = InvoiceItemFormSet(request.POST)
+
         if form.is_valid() and formset.is_valid():
-            invoice = form.save()
-            formset.instance = invoice
-            formset.save()
-            # total = items + tax - discount
-            invoice.recompute_total()
+            invoice = form.save(commit=False)
+            invoice.save()   # must save first to get invoice ID
+
+            items = formset.save(commit=False)
+            subtotal = Decimal("0.00")
+
+            for item in items:
+                item.invoice = invoice
+                if not item.unit_price:
+                    item.unit_price = item.product.price
+                item.save()
+                subtotal += item.quantity * item.unit_price
+
+            tax_percent = invoice.tax_percent or 0
+            discount_amount = invoice.discount_amount or Decimal("0.00")
+
+            tax_amount = subtotal * Decimal(tax_percent) / Decimal("100")
+            invoice.total_amount = subtotal + tax_amount - discount_amount
+            invoice.save()
+
             return redirect("invoice_list")
+
     else:
         form = InvoiceForm()
         formset = InvoiceItemFormSet()
 
+    products = Product.objects.all()
+
     return render(
         request,
         "invoices/invoice_form.html",
-        {"form": form, "formset": formset, "title": "New Invoice"},
+        {
+            "form": form,
+            "items": formset,
+            "products": products,
+            "title": "Create Invoice",
+        },
     )
+
+
+from decimal import Decimal
+from django.db.models import Sum, Value, DecimalField
+from django.db.models.functions import Coalesce
+from payments.models import Payment
+
+
+def recalculate_invoice_totals(invoice):
+    """Recalculate totals & status for a single invoice."""
+
+    items = invoice.items.all()
+
+    # SUBTOTAL
+    subtotal = Decimal("0.00")
+    for item in items:
+        subtotal += item.unit_price * item.quantity
+
+    # DISCOUNT & TAX
+    discount = invoice.discount_amount or Decimal("0.00")
+    tax_percent = invoice.tax_percent or Decimal("0.00")
+
+    taxable_amount = subtotal - discount
+    if taxable_amount < 0:
+        taxable_amount = Decimal("0.00")
+
+    tax_amount = (taxable_amount * tax_percent) / Decimal("100")
+    grand_total = taxable_amount + tax_amount
+
+    # PAYMENTS (only 'paid' payments)
+    paid_qs = Payment.objects.filter(invoice=invoice, status="paid")
+
+    total_paid = paid_qs.aggregate(
+        total=Coalesce(
+            Sum("amount"),
+            Value(0),
+            output_field=DecimalField(max_digits=10, decimal_places=2),
+        )
+    )["total"]
+
+    balance = grand_total - total_paid
+
+    # STATUS LOGIC
+    if total_paid <= 0:
+        invoice.status = "unpaid"
+    elif balance <= 0:
+        invoice.status = "paid"
+    else:
+        invoice.status = "partial"
+
+    invoice.save(update_fields=["status"])
+
+    # return numbers so others can use
+    return {
+        "subtotal": subtotal,
+        "discount": discount,
+        "tax_percent": tax_percent,
+        "tax_amount": tax_amount,
+        "grand_total": grand_total,
+        "total_paid": total_paid,
+        "balance": balance,
+    }
+
+from decimal import Decimal
+
+from django.db.models import Sum, Value, DecimalField
+from django.db.models.functions import Coalesce
+from payments.models import Payment
 
 
 def invoice_detail(request, pk):
     invoice = get_object_or_404(Invoice, pk=pk)
+    items = invoice.items.all()
 
-    # Safe defaults
-    subtotal = invoice.subtotal or Decimal("0")
-    discount = invoice.discount_amount or Decimal("0")
-    total = invoice.total_amount or Decimal("0")
+    totals = recalculate_invoice_totals(invoice)
+    # ---------- SUBTOTAL ----------
+    subtotal = Decimal("0.00")
+    for item in items:
+        subtotal += item.unit_price * item.quantity
 
-    # Base amount = subtotal - discount
-    base_amount = subtotal - discount
+    # ---------- DISCOUNT & TAX ----------
+    discount = invoice.discount_amount or Decimal("0.00")
+    tax_percent = invoice.tax_percent or Decimal("0.00")
 
-    # Tax amount = total - base_amount   (total = base + tax)
-    tax_amount = total - base_amount
+    taxable_amount = subtotal - discount
+    if taxable_amount < 0:
+        taxable_amount = Decimal("0.00")
 
-    # Tax % = (tax_amount / base_amount) * 100 (base 0 na 0%)
-    if base_amount != 0:
-        tax_percent = (tax_amount * Decimal("100")) / base_amount
-    else:
-        tax_percent = Decimal("0")
+    tax_amount = (taxable_amount * tax_percent) / Decimal("100")
 
-    context = {
+    # GRAND TOTAL = items - discount + tax
+    grand_total = taxable_amount + tax_amount
+
+    # ---------- PAYMENTS ----------
+    # change 'paid' to your actual status value if different
+    payments = Payment.objects.filter(invoice=invoice, status="paid")
+
+    total_paid = payments.aggregate(
+        total=Coalesce(
+            Sum("amount"),
+            Value(0),
+            output_field=DecimalField(max_digits=10, decimal_places=2),
+        )
+    )["total"]
+
+    balance = grand_total - total_paid
+    if balance < 0:
+        balance = Decimal("0.00")
+
+    # NOTE: we DO NOT assign to invoice.amount_paid / invoice.balance here,
+    # because they are properties (read-only)
+
+    return render(
+        request,
+        "invoices/invoice_detail.html",
+        {
+            "invoice": invoice,
+            "items": items,
+            "subtotal": subtotal,
+            "discount": discount,
+            "tax_percent": tax_percent,
+            "tax_amount": tax_amount,
+            "grand_total": grand_total,
+            "total_paid": total_paid,
+            "balance": balance,
+        },
+    )
+
+
+
+
+from django.shortcuts import render, redirect, get_object_or_404
+# ... other imports
+
+
+def invoice_delete(request, pk):
+    invoice = get_object_or_404(Invoice, pk=pk)
+
+    if request.method == "POST":
+        invoice.delete()
+        return redirect("invoice_list")   # list page-ku thirumba
+
+    # GET request na simple confirm page show pannalaam (optional)
+    return render(request, "invoices/invoice_confirm_delete.html", {
         "invoice": invoice,
-        "tax_amount": tax_amount,
-        "tax_percent": tax_percent,
-    }
-    return render(request, "invoices/invoice_detail.html", context)
+    })
+
+# invoices/views.py
+from django.db.models import Q
+from django.shortcuts import render
+from .models import Invoice
+
+
+def invoice_list(request):
+    q = request.GET.get("q", "").strip()
+
+    invoices = Invoice.objects.all().order_by("id")
+
+    if q:
+        # If q is a number → also check invoice id
+        invoices = invoices.filter(
+            Q(id__icontains=q) |
+            Q(customer__name__icontains=q)
+        )
+
+    return render(
+        request,
+        "invoices/invoice_list.html",
+        {
+            "invoices": invoices,
+            "search_query": q,
+        }
+    )
+
+def invoice_edit(request, pk):
+    invoice = get_object_or_404(Invoice, pk=pk)
+
+    if request.method == "POST":
+        form = InvoiceForm(request.POST, instance=invoice)
+        formset = InvoiceItemFormSet(request.POST, instance=invoice)
+
+        if form.is_valid() and formset.is_valid():
+            invoice = form.save(commit=False)
+
+            items = formset.save(commit=False)
+            subtotal = Decimal("0.00")
+
+            for item in items:
+                item.invoice = invoice
+                if not item.unit_price:
+                    item.unit_price = item.product.price
+                item.save()
+                subtotal += item.quantity * item.unit_price
+
+            # remove deleted items
+            for obj in formset.deleted_objects:
+                obj.delete()
+
+            tax_percent = invoice.tax_percent or 0
+            discount_amount = invoice.discount_amount or Decimal("0.00")
+
+            tax_amount = subtotal * Decimal(tax_percent) / Decimal("100")
+            invoice.total_amount = subtotal + tax_amount - discount_amount
+            invoice.save()
+
+            return redirect("invoice_list")
+
+    else:
+        form = InvoiceForm(instance=invoice)
+        formset = InvoiceItemFormSet(instance=invoice)
+
+    products = Product.objects.all()
+
+    return render(
+        request,
+        "invoices/invoice_form.html",
+        {
+            "form": form,
+            "items": formset,
+            "products": products,
+            "title": "Edit Invoice",
+        },
+    )

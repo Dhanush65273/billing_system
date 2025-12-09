@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Customer Summary{% endblock %}
+
+{% block content %}
+<h2>Customer Summary</h2>
+
+<div class="btn-0utline-group mb-3" role="group">
+    <a href="{% url 'payment_report' %}"          class="btn btn-outline-primary">Payments</a>
+    <a href="{% url 'customer_report' %}"         class="btn btn-outline-primary">Customer Wise</a>
+    <a href="{% url 'product_report' %}"          class="btn btn-outline-primary">Product Wise</a>
+    <a href="{% url 'invoice_report' %}"          class="btn btn-outline-primary">Invoice Wise</a>
+    <a href="{% url 'monthly_report' %}"          class="btn btn-outline-primary">Monthly Summary</a>
+    <a href="{% url 'outstanding_report' %}"      class="btn btn-outline-primary">Outstanding</a>
+
+    {# 🔵 Ithu dha current page, so only this is BLUE #}
+    <a href="{% url 'customer_summary_report' %}" class="btn btn-outline-primary">Customer Summary</a>
+</div>
+
+
+{# --- Filter form to choose customer --- #}
+<form method="get" class="row g-2 mb-4">
+    <div class="col-md-4">
+        <label class="form-label">Customer</label>
+        <select name="customer" class="form-select">
+            <option value="">-- Select customer --</option>
+            {% for c in customers %}
+                <option value="{{ c.id }}"
+                    {% if customer_id and customer_id|add:'' == c.id|stringformat:"s" %}selected{% endif %}>
+                    {{ c.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-2 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100">Filter</button>
+    </div>
+
+    <div class="col-md-2 d-flex align-items-end">
+        <a href="{% url 'customer_summary_report' %}" class="btn btn-outline-secondary w-100">Clear</a>
+    </div>
+</form>
+
+{% if selected_customer %}
+    <h4>Summary for: {{ selected_customer.name }}</h4>
+
+    {# --- CSV Download Button --- #}
+    <div class="mb-3">
+        <a href="{% url 'customer_summary_csv' %}?customer={{ selected_customer.id }}"
+           class="btn btn-outline-primary">
+            Download CSV
+        </a>
+    </div>
+
+    {% if summary %}
+    {# --- Summary Cards --- #}
+    <div class="row mb-4">
+
+        <div class="col-md-3">
+            <div class="card mb-2">
+                <div class="card-body">
+                    <h6 class="card-title mb-1">Total Invoices</h6>
+                    <p class="card-text fs-5 mb-0">{{ summary.total_invoices }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card mb-2">
+                <div class="card-body">
+                    <h6 class="card-title mb-1">Total Billed (₹)</h6>
+                    <p class="card-text fs-5 mb-0">{{ summary.total_billed|floatformat:2 }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card mb-2">
+                <div class="card-body">
+                    <h6 class="card-title mb-1">Total Paid (₹)</h6>
+                    <p class="card-text fs-5 mb-0">{{ summary.total_paid|floatformat:2 }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card mb-2">
+                <div class="card-body">
+                    <h6 class="card-title mb-1">Outstanding (₹)</h6>
+                    <p class="card-text fs-5 mb-0 text-danger">{{ summary.total_outstanding|floatformat:2 }}</p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    {# --- Invoice List --- #}
+    <h5>Invoices</h5>
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>S.No</th>
+                <th>Invoice #</th>
+                <th>Date</th>
+                <th>Total (₹)</th>
+                <th>Paid (₹)</th>
+                <th>Balance (₹)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for inv in invoices %}
+            <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ inv.id }}</td>
+                <td>{{ inv.date|date:"d-m-Y" }}</td>
+                <td>{{ inv.grand_total|floatformat:2 }}</td>
+                <td>{{ inv.amount_paid|floatformat:2 }}</td>
+                <td>{{ inv.balance|floatformat:2 }}</td>
+
+                <td>
+                    {% if inv.status == "paid" %}
+                        <span class="badge bg-success">PAID</span>
+                    {% elif inv.status == "partial" %}
+                        <span class="badge bg-warning text-dark">PARTIAL</span>
+                    {% elif inv.status == "unpaid" %}
+                        <span class="badge bg-danger">UNPAID</span>
+                    {% else %}
+                        <span class="badge bg-secondary">{{ inv.get_status_display }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" class="text-center">No invoices for this customer.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {# --- Payments List --- #}
+    <h5 class="mt-4">Payments</h5>
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>S.No</th>
+                <th>Date</th>
+                <th>Invoice #</th>
+                <th>Amount (₹)</th>
+                <th>Method</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for p in payments %}
+            <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ p.date|date:"d-m-Y" }}</td>
+                <td>{{ p.invoice.id }}</td>
+                <td>{{ p.amount|floatformat:2 }}</td>
+                <td>{{ p.method }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="text-center">No payments for this customer.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% else %}
+        <p>No invoices for this customer.</p>
+    {% endif %}
+
+{% elif customer_id %}
+    <p class="text-danger">Customer not found.</p>
+{% endif %}
+
+{% endblock %}

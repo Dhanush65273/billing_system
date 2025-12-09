@@ -26,6 +26,43 @@ from django.db import models
 from django.db.models.functions import TruncMonth
 from datetime import date
 from django.db.models import Sum, Count  
+# payments/views.py
+from decimal import Decimal
+from django.db.models import Sum
+from django.shortcuts import render, redirect, get_object_or_404
+
+from .models import Payment
+from invoices.models import Invoice
+
+def update_invoice_status(invoice: Invoice):
+    """
+    Payment ellam based pannitu invoice.status set pannum:
+    - unpaid : payments illa
+    - partial: some payments, but less than total
+    - paid   : payments >= total
+    """
+
+    # FULL amount customer pay pannanum (tax + discount ah include pannra field / property)
+    # Ungal Invoice model la total_amount property/field use panrom:
+    total_amount = Decimal(invoice.total_amount)
+
+    # Total paid so far (status='paid' payments matrum count)
+    total_paid = (
+        Payment.objects
+        .filter(invoice=invoice, status="paid")
+        .aggregate(total=Sum("amount"))
+        .get("total") or Decimal("0")
+    )
+
+    # Decide status
+    if total_paid <= 0:
+        invoice.status = "unpaid"
+    elif total_paid < total_amount:
+        invoice.status = "partial"
+    else:
+        invoice.status = "paid"
+
+    invoice.save(update_fields=["status"])
 
 def _parse_date(value):
     """
@@ -71,23 +108,26 @@ def payment_list(request):
     )
     return render(request, "payments/payment_list.html", {"payments": payments})
 
-def payment_add(request):
-    """
-    Add Payment page (/payments/add/)
-    """
+
+
+def payment_create(request):
     if request.method == "POST":
         form = PaymentForm(request.POST)
         if form.is_valid():
-            form.save()
+            payment = form.save(commit=False)
+            # auto status
+            payment.status = "paid"
+            payment.save()
+
+            # optional: update invoice status after payment
+            payment.invoice.update_status_from_payments()
+
             return redirect("payment_list")
     else:
         form = PaymentForm()
 
-    return render(
-        request,
-        "payments/payment_form.html",
-        {"form": form, "title": "Add Payment"},
-    )
+    return render(request, "payments/payment_form.html", {"form": form, "title": "Add Payment"})
+
 
 def payment_edit(request, pk):
     payment = get_object_or_404(Payment, pk=pk)
@@ -95,21 +135,64 @@ def payment_edit(request, pk):
     if request.method == "POST":
         form = PaymentForm(request.POST, instance=payment)
         if form.is_valid():
-            form.save()
+            payment = form.save(commit=False)
+            # keep it paid
+            payment.status = "paid"
+            payment.save()
+
+            payment.invoice.update_status_from_payments()
             return redirect("payment_list")
     else:
         form = PaymentForm(instance=payment)
-    return render(request, "payments/payment_form.html", {"form": form})
+
+    return render(request, "payments/payment_form.html", {"form": form, "title": "Edit Payment"})
+
+
 
 def payment_delete(request, pk):
     payment = get_object_or_404(Payment, pk=pk)
+    invoice = payment.invoice  # keep reference
+
     if request.method == "POST":
         payment.delete()
+        update_invoice_status(invoice)
         return redirect("payment_list")
+
+    return render(request, "payments/payment_confirm_delete.html", {
+        "payment": payment,
+    })
+
+
+# payments/views.py
+from django.shortcuts import render, redirect, get_object_or_404
+from django.utils import timezone
+
+from .models import Payment
+from .forms import PaymentForm
+
+
+def payment_create(request):
+    if request.method == "POST":
+        form = PaymentForm(request.POST)
+        if form.is_valid():
+            payment = form.save(commit=False)
+            # auto mark as paid
+            payment.status = "paid"
+            payment.save()
+
+            # invoice status update (using method on Invoice model)
+            payment.invoice.update_status_from_payments()
+
+            return redirect("payment_list")   # <-- unga list URL name
+    else:
+        form = PaymentForm(
+            initial={"date": timezone.now().date()}
+        )
+
     return render(
         request,
-        "payments/payment_confirm_delete.html",
-        {"payment": payment},
+        "payments/payment_form.html",
+        {"form": form, "title": "Add Payment"},
     )
 
 
@@ -388,120 +471,84 @@ def invoice_report_csv(request):
 
     return response
 
+def _get_outstanding_rows():
+    """
+    Returns list of dicts for invoices where balance > 0
+    Using Invoice.grand_total / amount_paid / balance.
+    """
+    rows = []
+
+    invoices = (
+        Invoice.objects
+        .select_related("customer")
+        .prefetch_related("items")
+        .order_by("date", "id")
+    )
+
+    for inv in invoices:
+        total = inv.grand_total
+        paid = inv.amount_paid
+        balance = inv.balance
+
+        if balance <= 0:
+            # fully paid or overpaid → not outstanding
+            continue
+
+        rows.append({
+            "invoice": inv,
+            "total": total,
+            "paid": paid,
+            "balance": balance,
+        })
+
+    return rows
+
+from django.shortcuts import render
+
+
 def outstanding_report(request):
-    date_from = request.GET.get("date_from")
-    date_to = request.GET.get("date_to")
-
-    invoices = Invoice.objects.select_related("customer")
-
-    if date_from:
-        invoices = invoices.filter(date__gte=date_from)
-    if date_to:
-        invoices = invoices.filter(date__lte=date_to)
-
-    # amount_paid = sum of successful payments
-    invoices = invoices.annotate(
-        amount_paid=Coalesce(
-            Sum(
-                "payments__amount",
-                filter=Q(payments__status="paid"),
-            ),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        )
-    )
-
-    invoices = invoices.annotate(
-        balance=ExpressionWrapper(
-            F("total_amount") - F("amount_paid"),
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        )
-    )
-
-    # Only invoices where some balance is pending
-    invoices = invoices.filter(balance__gt=0)
-
-    totals = invoices.aggregate(
-        total_invoices=Coalesce(
-            Sum("total_amount"),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        ),
-        total_paid=Coalesce(
-            Sum("amount_paid"),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        ),
-        total_balance=Coalesce(
-            Sum("balance"),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        ),
-    )
+    rows = _get_outstanding_rows()
 
     context = {
-        "invoices": invoices.order_by("-date", "-id"),
-        "date_from": date_from,
-        "date_to": date_to,
-        "totals": totals,
+        "rows": rows,
     }
     return render(request, "payments/outstanding_report.html", context)
 
-# outstanding report
+
 def outstanding_report_csv(request):
-    date_from = request.GET.get("date_from")
-    date_to = request.GET.get("date_to")
+    rows = _get_outstanding_rows()
 
-    invoices = Invoice.objects.select_related("customer")
-
-    if date_from:
-        invoices = invoices.filter(date__gte=date_from)
-    if date_to:
-        invoices = invoices.filter(date__lte=date_to)
-
-    invoices = invoices.annotate(
-        amount_paid=Coalesce(
-            Sum(
-                "payments__amount",
-                filter=Q(payments__status="paid"),
-            ),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        )
-    )
-
-    invoices = invoices.annotate(
-        balance=ExpressionWrapper(
-            F("total_amount") - F("amount_paid"),
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        )
-    ).filter(balance__gt=0)
-
-    # ---- CSV response ----
     response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = 'attachment; filename=\"outstanding_report.csv\"'
-
-    import csv
+    response["Content-Disposition"] = 'attachment; filename="outstanding_report.csv"'
 
     writer = csv.writer(response)
-    writer.writerow(
-        ["Invoice ID", "Date", "Customer", "Total (₹)", "Paid (₹)", "Balance (₹)", "Status"]
-    )
+    # header
+    writer.writerow([
+        "S.No",
+        "Invoice #",
+        "Date",
+        "Customer",
+        "Total Amount",
+        "Paid",
+        "Outstanding",
+        "Status",
+    ])
 
-    for inv in invoices.order_by("-date", "-id"):
-        writer.writerow(
-            [
-                inv.id,
-                inv.date.strftime("%Y-%m-%d"),
-                inv.customer.name,
-                inv.total_amount,
-                inv.amount_paid,
-                inv.balance,
-                inv.get_status_display(),
-            ]
-        )
+    for idx, row in enumerate(rows, start=1):
+        inv = row["invoice"]
+        writer.writerow([
+            idx,
+            inv.id,
+            inv.date.strftime("%d-%m-%Y"),
+            inv.customer.name,
+            f"{row['total']:.2f}",
+            f"{row['paid']:.2f}",
+            f"{row['balance']:.2f}",
+            inv.get_status_display(),
+        ])
 
     return response
+
 
 def payment_report(request):
     """
@@ -687,35 +734,52 @@ def customer_report_csv(request):
 
     return response
 
+from datetime import date
+from decimal import Decimal
+from collections import defaultdict
+
+from django.shortcuts import render
+from invoices.models import Invoice
+
+
 def monthly_report(request):
-    # Year filter (default: current year)
-    year_str = request.GET.get("year") or ""
-    try:
+    year_str = request.GET.get("year")
+    if year_str and year_str.isdigit():
         year = int(year_str)
-    except:
+    else:
         year = date.today().year
         year_str = str(year)
 
-    qs = (
+    invoices = (
         Invoice.objects
         .filter(date__year=year)
-        .annotate(month=TruncMonth("date"))
-        .values("month")
-        .annotate(
-            total_invoices=Count("id"),
-            total_amount=Sum("total_amount"),
-        )
-        .order_by("month")
+        .prefetch_related("items")   # so inv.total is cheap
     )
 
-    rows = list(qs)
+    summary_map = defaultdict(
+        lambda: {"total_invoices": 0, "total_amount": Decimal("0.00")}
+    )
+
+    for inv in invoices:
+        month_key = inv.date.replace(day=1)
+        summary_map[month_key]["total_invoices"] += 1
+        summary_map[month_key]["total_amount"] += inv.total   # ⭐ same as list
+
+    summary = []
+    for month, data in sorted(summary_map.items(), key=lambda x: x[0]):
+        summary.append(
+            {
+                "month": month,
+                "total_invoices": data["total_invoices"],
+                "total_amount": data["total_amount"],
+            }
+        )
 
     context = {
-        "rows": rows,
         "year": year_str,
+        "summary": summary,
     }
     return render(request, "payments/monthly_report.html", context)
-
 
 def monthly_report_csv(request):
     year_str = request.GET.get("year") or ""
@@ -756,4 +820,151 @@ def monthly_report_csv(request):
             r["total_invoices"],
             r["total_amount"],
         ])
+    return response
+
+
+from decimal import Decimal
+from django.db.models import Sum
+from customers.models import Customer
+from invoices.models import Invoice
+from .models import Payment
+
+def customer_summary_report(request):
+    # get selected customer id from query string
+    customer_id = request.GET.get("customer") or ""
+    customers = Customer.objects.all().order_by("name")
+
+    selected_customer = None
+    invoices = []
+    payments = []
+    summary = None
+
+    if customer_id:
+        try:
+            selected_customer = customers.get(id=customer_id)
+        except Customer.DoesNotExist:
+            selected_customer = None
+        else:
+            # all invoices for that customer
+            invoices = (
+                Invoice.objects
+                .filter(customer=selected_customer)
+                .prefetch_related("items")
+                .order_by("date", "id")
+            )
+
+            # total billed = sum of grand_total
+            total_billed = sum((inv.grand_total for inv in invoices), Decimal("0"))
+
+            # total outstanding = sum of invoice balances
+            total_outstanding = sum((inv.balance for inv in invoices), Decimal("0"))
+
+            # all PAID payments for that customer's invoices
+            payments = (
+                Payment.objects
+                .filter(invoice__customer=selected_customer, status="paid")
+                .select_related("invoice")
+                .order_by("date", "id")
+            )
+
+            total_paid = (
+                payments.aggregate(total=Sum("amount"))["total"]
+                or Decimal("0")
+            )
+
+            summary = {
+                "total_invoices": len(invoices),
+                "total_billed": total_billed,
+                "total_paid": total_paid,
+                "total_outstanding": total_outstanding,
+            }
+
+    context = {
+        "customers": customers,
+        "customer_id": customer_id,
+        "selected_customer": selected_customer,
+        "summary": summary,
+        "invoices": invoices,
+        "payments": payments,
+    }
+    return render(request, "payments/customer_summary.html", context)
+
+
+from django.http import HttpResponse
+import csv
+from decimal import Decimal
+
+# ... already have Customer, Invoice, Payment imports ...
+
+
+def customer_summary_csv(request):
+    customer_id = request.GET.get("customer") or ""
+
+    if not customer_id:
+        # no customer selected – simple error CSV
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="customer_summary.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Error"])
+        writer.writerow(["No customer selected"])
+        return response
+
+    try:
+        customer = Customer.objects.get(id=customer_id)
+    except Customer.DoesNotExist:
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="customer_summary.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Error"])
+        writer.writerow(["Customer not found"])
+        return response
+
+    invoices = (
+        Invoice.objects
+        .filter(customer=customer)
+        .prefetch_related("items")
+        .order_by("date", "id")
+    )
+
+    # CSV response
+    response = HttpResponse(content_type="text/csv")
+    filename = f"customer_summary_{customer.id}.csv"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response)
+
+    # header
+    writer.writerow([f"Customer Summary - {customer.name}"])
+    writer.writerow([])
+    writer.writerow([
+        "S.No",
+        "Invoice ID",
+        "Date",
+        "Total (₹)",
+        "Paid (₹)",
+        "Balance (₹)",
+        "Status",
+    ])
+
+    for idx, inv in enumerate(invoices, start=1):
+        writer.writerow([
+            idx,
+            inv.id,
+            inv.date.strftime("%d-%m-%Y"),
+            f"{inv.grand_total:.2f}",
+            f"{inv.amount_paid:.2f}",
+            f"{inv.balance:.2f}",
+            inv.get_status_display(),
+        ])
+
+    # Small overall summary at bottom
+    total_billed = sum((inv.grand_total for inv in invoices), Decimal("0"))
+    total_outstanding = sum((inv.balance for inv in invoices), Decimal("0"))
+    # total paid = billed - outstanding (or you can use sum of payments)
+    total_paid = total_billed - total_outstanding
+
+    writer.writerow([])
+    writer.writerow(["Totals", "", "", f"{total_billed:.2f}",
+                     f"{total_paid:.2f}", f"{total_outstanding:.2f}", ""])
+
     return response

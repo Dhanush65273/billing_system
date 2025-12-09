@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block title %}Delete Payment #{{ payment.id }}{% endblock %}
+
+{% block content %}
+<h2 class="mb-3 text-danger">Delete Payment #{{ payment.id }}</h2>
+
+<div class="alert alert-warning">
+    <strong>Warning!</strong> You are about to permanently delete this payment.
+    This action cannot be undone.
+</div>
+
+<p><strong>Invoice:</strong> {{ payment.invoice.id }} (Customer: {{ payment.invoice.customer.name }})</p>
+<p><strong>Date:</strong> {{ payment.date|date:"M d, Y" }}</p>
+<p><strong>Amount:</strong> ₹{{ payment.amount }}</p>
+<p><strong>Status:</strong> {{ payment.get_status_display }}</p>
+
+<hr>
+
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">
+        Yes, delete this payment
+    </button>
+    <a href="{% url 'payment_list' %}" class="btn btn-secondary">
+        Cancel
+    </a>
+</form>
+{% endblock %}

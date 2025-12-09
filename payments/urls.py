@@ -6,7 +6,7 @@ from . import views
 urlpatterns = [
     # ---------- Payments CRUD ----------
     path("", views.payment_list, name="payment_list"),
-    path("add/", views.payment_add, name="payment_add"),
+    path("add/", views.payment_create, name="payment_create"),
     path("edit/<int:pk>/", views.payment_edit, name="payment_edit"),
     path("delete/<int:pk>/", views.payment_delete, name="payment_delete"),
 
@@ -33,6 +33,11 @@ urlpatterns = [
     path("reports/invoices/csv/", views.invoice_report_csv, name="invoice_report_csv"),
 
     # ---------- Outstanding Report ----------
-    path("reports/outstanding/", views.outstanding_report, name="outstanding_report"),
-    path("reports/outstanding/csv/", views.outstanding_report_csv, name="outstanding-report-csv"),
+   path("reports/outstanding/", views.outstanding_report, name="outstanding_report"),
+   path("reports/outstanding/csv/", views.outstanding_report_csv, name="outstanding_report_csv"),
+
+    # ---------- customer summary Report ---------
+     path("reports/customer-summary/", views.customer_summary_report, name="customer_summary_report"),
+     path("reports/customer-summary/csv/", views.customer_summary_csv, name="customer_summary_csv",),
+
 ]
