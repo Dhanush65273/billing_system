@@ -13,32 +13,57 @@ from django.db.models.functions import Coalesce
 
 from decimal import Decimal
 
-# views.py
+from django.db import transaction
+# NOTE: django.core.exceptions.ValidationError now use pannom, remove or leave it's ok
 
 def invoice_create(request):
     if request.method == "POST":
         form = InvoiceForm(request.POST)
-        formset = InvoiceItemFormSet(request.POST, prefix="items")  # 👈 IMPORTANT
+        formset = InvoiceItemFormSet(request.POST)
 
         if form.is_valid() and formset.is_valid():
-            invoice = form.save()
-            items = formset.save(commit=False)
-            for item in items:
-                item.invoice = invoice
-                if not item.unit_price:
-                    item.unit_price = item.product.product_price
-                item.save()
+            with transaction.atomic():
+                invoice = form.save()
+                items = formset.save(commit=False)
+
+                for item in items:
+                    item.invoice = invoice
+
+                    # unit price set pannalana product price use pannidalaam
+                    if not item.unit_price:
+                        item.unit_price = item.product.price or 0
+
+                    item.save()
+
+                    # 🔻 STOCK REDUCE – simple version, check mattum illa
+                    product = item.product
+                    if product.stock is not None and item.quantity is not None:
+                        product.stock = (product.stock or 0) - item.quantity
+                        # want-na 0-kku mela irukanum na: product.stock = max(0, product.stock)
+                        product.save()
+
+                # delete mark panniruka items
+                for obj in formset.deleted_objects:
+                    obj.delete()
+
             return redirect("invoice_list")
     else:
         form = InvoiceForm()
-        formset = InvoiceItemFormSet(prefix="items")  # 👈 SAME PREFIX HERE ALSO
+        formset = InvoiceItemFormSet()
 
     products = Product.objects.all()
+
     return render(
         request,
         "invoices/invoice_form.html",
-        {"form": form, "items": formset, "products": products},
+        {
+            "form": form,
+            "items": formset,
+            "products": products,
+            "title": "Create Invoice",
+        },
     )
+
 
 
 from decimal import Decimal

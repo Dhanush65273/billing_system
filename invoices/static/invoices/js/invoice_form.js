@@ -1,120 +1,216 @@
-// static/invoices/js/invoice_form.js
-
 console.log("invoice_form.js loaded");
 
-// attach auto-price handler to one select element
-function attachPriceHandler(select) {
-    if (!select) return;
-
-    // avoid duplicate listeners
-    if (select.__priceHandlerAttached) return;
-    select.__priceHandlerAttached = true;
-
-    select.addEventListener("change", function () {
-        const row = select.closest("tr");
-        if (!row) return;
-
-        const selectedOption = select.options[select.selectedIndex];
-        const price = selectedOption.getAttribute("data-price") || "";
-
-        // ✅ find specifically the unit_price input in this row
-        const unitPriceInput = row.querySelector('input[name$="-unit_price"]');
-
-        if (!unitPriceInput) {
-            console.log("unit_price input not found in row", row);
-            return;
-        }
-
-        console.log("product changed", {
-            productId: select.value,
-            price: price,
-            unitPriceInputName: unitPriceInput.name,
-        });
-
-        if (price !== "") {
-            unitPriceInput.value = price;
-        }
-    });
+// ---------- helpers ----------
+function parseNumber(value) {
+    const n = parseFloat(value);
+    return isNaN(n) ? 0 : n;
 }
 
-function renumberRows() {
-    const rows = document.querySelectorAll("#formset-body tr.item-row");
-    let counter = 1;
-    rows.forEach((row) => {
-        if (row.style.display === "none") return;
-        const numCell = row.querySelector(".row-number");
-        if (numCell) {
-            numCell.textContent = counter;
-            counter += 1;
-        }
-    });
+// map: productId -> price
+function getPriceMap() {
+    const el = document.getElementById("product-price-data");
+    if (!el) return {};
+    try {
+        return JSON.parse(el.textContent.trim());
+    } catch (e) {
+        console.error("price json parse error", e);
+        return {};
+    }
 }
 
-window.addEventListener("load", function () {
-    // ----- 1. Auto price for EXISTING rows -----
-    const selects = document.querySelectorAll("select.product-select");
-    console.log("found product selects:", selects.length);
-    selects.forEach(attachPriceHandler);
+const priceMap = getPriceMap();
 
-    // ----- 2. Dynamic rows: Add / Delete -----
-    const tableBody = document.getElementById("formset-body");
-    const addBtn = document.getElementById("add-row-btn");
-    const templateEl = document.getElementById("empty-row");
-    const totalFormsInput = document.querySelector('input[name$="-TOTAL_FORMS"]');
+// ---------- row setup ----------
+function setupRow(row) {
+    if (!row) return;
 
-    if (!tableBody || !addBtn || !templateEl || !totalFormsInput) {
-        console.log("Formset elements missing, dynamic rows disabled", {
-            tableBody: !!tableBody,
-            addBtn: !!addBtn,
-            templateEl: !!templateEl,
-            totalFormsInput: !!totalFormsInput,
-        });
-        return;
+    const productSelect = row.querySelector("select");
+    const qtyInput = row.querySelector('input[name$="-quantity"]');
+    const unitPriceInput = row.querySelector('input[name$="-unit_price"]');
+
+    // default qty = 1
+    if (qtyInput && !qtyInput.value) {
+        qtyInput.value = "1";
     }
 
-    // ➕ Add item row
-    addBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        console.log("Add item clicked");
+    // when product changes -> fill unit price
+    if (productSelect && unitPriceInput) {
+        productSelect.addEventListener("change", function () {
+            const pid = this.value;
+            const price = priceMap[pid] ? parseNumber(priceMap[pid]) : 0;
+            if (price) {
+                unitPriceInput.value = price.toFixed(2);
+            } else {
+                unitPriceInput.value = "";
+            }
+            recalcTotals();
+        });
+    }
 
-        const formIndex = parseInt(totalFormsInput.value, 10) || 0;
+    // when qty or unit price changes -> recalc
+    if (qtyInput) qtyInput.addEventListener("input", recalcTotals);
+    if (unitPriceInput) unitPriceInput.addEventListener("input", recalcTotals);
+}
 
-        // replace __prefix__ & __num__ in template
-        let rowHtml = templateEl.innerHTML
-            .replace(/__prefix__/g, formIndex)
-            .replace(/__num__/g, formIndex + 1);
+// ---------- totals ----------
+function recalcTotals() {
+    const taxPercentInput = document.getElementById("id_tax_percent");
+    const discountAmountInput = document.getElementById("id_discount_amount");
 
-        const temp = document.createElement("tbody");
-        temp.innerHTML = rowHtml.trim();
-        const newRow = temp.firstElementChild;
+    const taxPercent = parseNumber(taxPercentInput ? taxPercentInput.value : 0);
+    const invoiceDiscount = parseNumber(
+        discountAmountInput ? discountAmountInput.value : 0
+    );
 
-        tableBody.appendChild(newRow);
+    const rows = document.querySelectorAll(".invoice-item-row");
 
-        // increase TOTAL_FORMS
-        totalFormsInput.value = formIndex + 1;
+    let subtotal = 0;
+    const lineSubtotals = [];
 
-        // attach price handler to new select
-        const newSelect = newRow.querySelector("select.product-select");
-        attachPriceHandler(newSelect);
+    // 1st pass: subtotal per row
+    rows.forEach((row, idx) => {
+        const qtyInput = row.querySelector('input[name$="-quantity"]');
+        const unitPriceInput = row.querySelector('input[name$="-unit_price"]');
 
-        renumberRows();
+        const qty = parseNumber(qtyInput ? qtyInput.value : 0);
+        const unitPrice = parseNumber(unitPriceInput ? unitPriceInput.value : 0);
+
+        const lineSubtotal = qty * unitPrice;
+        lineSubtotals[idx] = lineSubtotal;
+        subtotal += lineSubtotal;
     });
 
-    // ❌ Delete row
-    tableBody.addEventListener("click", function (e) {
-        const btn = e.target.closest(".delete-row-btn");
-        if (!btn) return;
+    // 2nd pass: tax, discount, total per row
+    let totalTax = 0;
+    let totalDiscount = 0;
+    let grandTotal = 0;
 
-        e.preventDefault();
-        const row = btn.closest("tr.item-row");
-        if (!row) return;
+    rows.forEach((row, idx) => {
+        const lineSubtotal = lineSubtotals[idx];
 
-        const deleteField = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-        if (deleteField) {
-            deleteField.checked = true;  // tell Django to delete this form
+        // tax = subtotal * invoice tax %
+        const lineTax = lineSubtotal * (taxPercent / 100.0);
+
+        // discount distributed by proportion of subtotal
+        const lineDiscount =
+            subtotal > 0 ? (lineSubtotal / subtotal) * invoiceDiscount : 0;
+
+        const lineTotal = lineSubtotal + lineTax - lineDiscount;
+
+        const taxField = row.querySelector(".item-tax");
+        const discountField = row.querySelector(".item-discount");
+        const totalField = row.querySelector(".item-total");
+
+        if (taxField) taxField.value = lineTax ? lineTax.toFixed(2) : "";
+        if (discountField)
+            discountField.value = lineDiscount ? lineDiscount.toFixed(2) : "";
+        if (totalField) totalField.value = lineTotal ? lineTotal.toFixed(2) : "";
+
+        totalTax += lineTax;
+        totalDiscount += lineDiscount;
+        grandTotal += lineTotal;
+    });
+
+    // footer inputs
+    const subtotalInput = document.getElementById("subtotal");
+    const totalTaxInput = document.getElementById("total-tax");
+    const totalDiscountInput = document.getElementById("total-discount");
+    const grandTotalInput = document.getElementById("grand-total");
+
+    if (subtotalInput) subtotalInput.value = subtotal ? subtotal.toFixed(2) : "";
+    if (totalTaxInput) totalTaxInput.value = totalTax ? totalTax.toFixed(2) : "";
+    if (totalDiscountInput)
+        totalDiscountInput.value = totalDiscount ? totalDiscount.toFixed(2) : "";
+    if (grandTotalInput)
+        grandTotalInput.value = grandTotal ? grandTotal.toFixed(2) : "";
+}
+
+// ---------- add / delete rows ----------
+function renumberRows() {
+    const rows = document.querySelectorAll(".invoice-item-row .row-index");
+    rows.forEach((cell, idx) => {
+        cell.textContent = idx + 1;
+    });
+}
+
+function setupDeleteButtons() {
+    document
+        .querySelectorAll(".invoice-item-row .delete-row")
+        .forEach((btn) => {
+            btn.addEventListener("click", function () {
+                const row = this.closest("tr");
+                if (!row) return;
+                row.remove();
+                renumberRows();
+                recalcTotals();
+            });
+        });
+}
+
+function addNewRow() {
+    const tbody = document.getElementById("items-body");
+    if (!tbody) return;
+
+    const totalFormsInput = document.getElementById("id_items-TOTAL_FORMS");
+    // if your management form name is different, adjust ^
+
+    const currentCount = parseInt(totalFormsInput.value, 10) || 0;
+    const emptyRowTemplate = tbody.querySelector("tr.invoice-item-row");
+    if (!emptyRowTemplate) return;
+
+    const newRow = emptyRowTemplate.cloneNode(true);
+
+    // update form index in all name/id attributes
+    newRow.querySelectorAll("[name], [id], [for]").forEach((el) => {
+        ["name", "id", "for"].forEach((attr) => {
+            const val = el.getAttribute(attr);
+            if (val) {
+                el.setAttribute(
+                    attr,
+                    val.replace(/items-\d+-/g, "items-" + currentCount + "-")
+                );
+            }
+        });
+
+        if (el.tagName === "INPUT") {
+            const type = el.getAttribute("type") || "text";
+            if (type === "text" || type === "number") {
+                el.value = "";
+            }
+            if (type === "checkbox") {
+                el.checked = false;
+            }
         }
-
-        row.style.display = "none";
-        renumberRows();
+        if (el.tagName === "SELECT") {
+            el.selectedIndex = 0;
+        }
     });
+
+    tbody.appendChild(newRow);
+    totalFormsInput.value = currentCount + 1;
+
+    setupRow(newRow);
+    setupDeleteButtons();
+    renumberRows();
+    recalcTotals();
+}
+
+// ---------- init ----------
+window.addEventListener("DOMContentLoaded", function () {
+    // existing rows
+    document.querySelectorAll(".invoice-item-row").forEach(setupRow);
+
+    // recalc when header tax / discount changes
+    const taxPercentInput = document.getElementById("id_tax_percent");
+    const discountAmountInput = document.getElementById("id_discount_amount");
+    if (taxPercentInput) taxPercentInput.addEventListener("input", recalcTotals);
+    if (discountAmountInput)
+        discountAmountInput.addEventListener("input", recalcTotals);
+
+    // add item button
+    const addBtn = document.getElementById("add-item");
+    if (addBtn) addBtn.addEventListener("click", addNewRow);
+
+    setupDeleteButtons();
+    recalcTotals();
 });

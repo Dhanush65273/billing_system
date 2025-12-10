@@ -49,6 +49,19 @@
 
     <h4 class="mt-4">Items</h4>
 
+{% if items.errors %}
+<div class="alert alert-danger">
+    <strong>Item Errors:</strong>
+    <ul>
+    {% for form in items.forms %}
+        {% for field, errors in form.errors.items %}
+            <li>{{ field }} - {{ errors }}</li>
+        {% endfor %}
+    {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
     {{ items.management_form }}
 
     <table class="table table-bordered" id="items-table">
@@ -58,39 +71,79 @@
                 <th>Product</th>
                 <th style="width:120px;">Quantity</th>
                 <th style="width:150px;">Unit price (₹)</th>
+                <th style="width:120px;">Tax (₹)</th>
+                <th style="width:140px;">Discount (₹)</th>
+                <th style="width:150px;">Line total (₹)</th>
                 <th style="width:70px;">Delete</th>
             </tr>
         </thead>
         <tbody id="formset-body">
-            {% for f in items.forms %}
-            <tr class="item-row">
-                <td class="row-number">{{ forloop.counter }}</td>
+    {% for f in items.forms %}
+    <tr class="item-row">
+        <!-- ROW NUMBER -->
+        <td class="row-number">{{ forloop.counter }}</td>
 
-                <!-- PRODUCT SELECT -->
-                <td>
-                    <select
-                        name="{{ f.product.html_name }}"
-                        id="{{ f.product.id_for_label }}"
-                        class="form-select product-select">
-                        <option value="">---------</option>
-                        {% for p in products %}
-                            <option value="{{ p.id }}"
-                                    data-price="{{ p.product_price }}"
-                                    {% if f.instance.product_id == p.id %}selected{% endif %}>
-                                {{ p.name }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </td>
+        <!-- PRODUCT -->
+        <td>
+            <select
+                name="{{ f.product.html_name }}"
+                id="{{ f.product.id_for_label }}"
+                class="form-select product-select">
+                <option value="">---------</option>
+                {% for p in products %}
+                    <option value="{{ p.id }}"
+                            data-price="{{ p.product_price }}"
+                            {% if f.instance.product_id == p.id %}selected{% endif %}>
+                        {{ p.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </td>
 
-                <!-- QUANTITY -->
-                <td>{{ f.quantity }}</td>
+        <!-- QUANTITY -->
+        <td>
+            <input type="number"
+                name="{{ f.quantity.html_name }}"
+                id="{{ f.quantity.id_for_label }}"
+                class="form-control quantity-input"
+                value="{{ f.quantity.value|default:'1' }}">
+        </td>
 
-                <!-- UNIT PRICE -->
-                <td>{{ f.unit_price }}</td>
 
-                <td class="text-center">
-            {{ f.DELETE }}   {# checkbox form field – JS uses this #}
+
+        <!-- UNIT PRICE -->
+        <td>
+            <input type="text"
+                   name="{{ f.unit_price.html_name }}"
+                   id="{{ f.unit_price.id_for_label }}"
+                   class="form-control unit-price-input"
+                   value="{{ f.unit_price.value|default:'0.00' }}">
+        </td>
+
+        <!-- TAX (₹) – per item, readonly, JS fills -->
+        <td>
+            <input type="text"
+                   class="form-control item-tax"
+                   readonly>
+        </td>
+
+        <!-- DISCOUNT (₹) – per item, readonly, JS fills -->
+        <td>
+            <input type="text"
+                   class="form-control item-discount"
+                   readonly>
+        </td>
+
+        <!-- LINE TOTAL (₹) – per item, readonly, JS fills -->
+        <td>
+            <input type="text"
+                   class="form-control item-total"
+                   readonly>
+        </td>
+
+        <!-- DELETE -->
+        <td class="text-center">
+            {{ f.DELETE }}
             <button type="button"
                     class="btn btn-sm btn-danger delete-row-btn">
                 ✕
@@ -100,6 +153,33 @@
     {% endfor %}
 </tbody>
 
+        <tfoot>
+            <tr>
+                <th colspan="3" class="text-end">Totals</th>
+
+                <!-- subtotal (qty * unit price) -->
+                <th>
+                    <input type="text" id="subtotal" class="form-control" readonly>
+                </th>
+
+                <!-- sum of all item taxes -->
+                <th>
+                    <input type="text" id="total-tax" class="form-control" readonly>
+                </th>
+
+                <!-- sum of all item discounts -->
+                <th>
+                    <input type="text" id="total-discount" class="form-control" readonly>
+                </th>
+
+                <!-- grand total -->
+                <th>
+                    <input type="text" id="grand-total" class="form-control" readonly>
+                </th>
+
+                <th></th>
+            </tr>
+        </tfoot>
     </table>
 
     <button type="button" class="btn btn-outline-success mb-3" id="add-row-btn">
@@ -135,9 +215,21 @@
 
     <td>
         <input type="text"
-               name="items-__prefix__-unit_price"
-               class="form-control"
-               value="0.00">
+            name="items-__prefix__-unit_price"
+            class="form-control unit-price-input"
+            value="0.00">
+    </td>
+
+
+
+    <td>
+        <input type="text" class="form-control item-tax" readonly>
+    </td>
+    <td>
+        <input type="text" class="form-control item-discount" readonly>
+    </td>
+    <td>
+        <input type="text" class="form-control item-total" readonly>
     </td>
 
     <td class="text-center">
@@ -153,10 +245,17 @@
 </script>
 
 {# --------- INLINE JS (NO external file) --------- #}
-<script>
-console.log("invoice_form inline JS loaded");
 
-// unit price autofill for one select
+<script>
+console.log("invoice_form inline JS – header tax/discount split loaded");
+
+// ---------- helpers ----------
+function parseNumber(value) {
+    const n = parseFloat(value);
+    return isNaN(n) ? 0 : n;
+}
+
+// product select -> fill unit price from data-price
 function attachPriceHandler(select) {
     if (!select) return;
     if (select.__priceHandlerAttached) return;
@@ -170,23 +269,87 @@ function attachPriceHandler(select) {
         const price = opt.getAttribute("data-price") || "";
 
         const unitPriceInput = row.querySelector('input[name$="-unit_price"]');
-        if (!unitPriceInput) {
-            console.log("unit_price input not found in row", row);
-            return;
-        }
-
-        console.log("product changed", {
-            productId: select.value,
-            price: price,
-            unitPriceInputName: unitPriceInput.name,
-        });
+        if (!unitPriceInput) return;
 
         if (price !== "") {
             unitPriceInput.value = price;
         }
+        recalcTotals();
     });
 }
 
+// ---------- MAIN CALC ----------
+function recalcTotals() {
+    const taxPercentInput = document.getElementById("id_tax_percent");
+    const discountAmountInput = document.getElementById("id_discount_amount");
+
+    const taxPercent = parseNumber(taxPercentInput ? taxPercentInput.value : 0);
+    const invoiceDiscount = parseNumber(discountAmountInput ? discountAmountInput.value : 0);
+
+    const rows = document.querySelectorAll("#formset-body tr.item-row");
+
+    let subtotal = 0;
+    const lineSubtotals = [];
+
+    // 1st pass – subtotal per row
+    rows.forEach((row, idx) => {
+        if (row.style.display === "none") {
+            lineSubtotals[idx] = 0;
+            return;
+        }
+
+        const qtyInput = row.querySelector('input[name$="-quantity"]');
+        const unitPriceInput = row.querySelector('input[name$="-unit_price"]');
+
+        const qty = parseNumber(qtyInput ? qtyInput.value : 0);
+        const unitPrice = parseNumber(unitPriceInput ? unitPriceInput.value : 0);
+
+        const lineSubtotal = qty * unitPrice;
+        lineSubtotals[idx] = lineSubtotal;
+        subtotal += lineSubtotal;
+    });
+
+    let totalTax = 0;
+    let totalDiscount = 0;
+    let grandTotal = 0;
+
+    // 2nd pass – split header tax & discount row-wise
+    rows.forEach((row, idx) => {
+        if (row.style.display === "none") return;
+
+        const lineSubtotal = lineSubtotals[idx];
+
+        const lineTax = lineSubtotal * (taxPercent / 100.0);
+        const lineDiscount =
+            subtotal > 0 ? (lineSubtotal / subtotal) * invoiceDiscount : 0;
+        const lineTotal = lineSubtotal + lineTax - lineDiscount;
+
+        const taxField = row.querySelector(".item-tax");
+        const discountField = row.querySelector(".item-discount");
+        const totalField = row.querySelector(".item-total");
+
+        if (taxField) taxField.value = lineTax ? lineTax.toFixed(2) : "";
+        if (discountField) discountField.value = lineDiscount ? lineDiscount.toFixed(2) : "";
+        if (totalField) totalField.value = lineTotal ? lineTotal.toFixed(2) : "";
+
+        totalTax += lineTax;
+        totalDiscount += lineDiscount;
+        grandTotal += lineTotal;
+    });
+
+    // footer fields
+    const subtotalInput = document.getElementById("subtotal");
+    const totalTaxInput = document.getElementById("total-tax");
+    const totalDiscountInput = document.getElementById("total-discount");
+    const grandTotalInput = document.getElementById("grand-total");
+
+    if (subtotalInput) subtotalInput.value = subtotal ? subtotal.toFixed(2) : "";
+    if (totalTaxInput) totalTaxInput.value = totalTax ? totalTax.toFixed(2) : "";
+    if (totalDiscountInput) totalDiscountInput.value = totalDiscount ? totalDiscount.toFixed(2) : "";
+    if (grandTotalInput) grandTotalInput.value = grandTotal ? grandTotal.toFixed(2) : "";
+}
+
+// ---------- row helpers ----------
 function renumberRows() {
     const rows = document.querySelectorAll("#formset-body tr.item-row");
     let i = 1;
@@ -200,68 +363,107 @@ function renumberRows() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", function () {
-    // 1) existing rows
-    const selects = document.querySelectorAll("select.product-select");
-    console.log("found product selects:", selects.length);
-    selects.forEach(attachPriceHandler);
+function setupRow(row) {
+    if (!row) return;
 
-    // 2) dynamic rows
+    const select = row.querySelector("select.product-select");
+    attachPriceHandler(select);
+
+    const qtyInput = row.querySelector('input[name$="-quantity"]');
+    const unitPriceInput = row.querySelector('input[name$="-unit_price"]');
+
+    if (qtyInput && !qtyInput.value) qtyInput.value = "1";
+
+    if (qtyInput && !qtyInput.__listener) {
+        qtyInput.__listener = true;
+        qtyInput.addEventListener("input", recalcTotals);
+    }
+    if (unitPriceInput && !unitPriceInput.__listener) {
+        unitPriceInput.__listener = true;
+        unitPriceInput.addEventListener("input", recalcTotals);
+    }
+}
+
+// ---------- init ----------
+document.addEventListener("DOMContentLoaded", function () {
+    // existing rows
+    document.querySelectorAll("#formset-body tr.item-row").forEach(setupRow);
+
     const body = document.getElementById("formset-body");
     const addBtn = document.getElementById("add-row-btn");
     const tpl = document.getElementById("empty-row");
     const totalFormsInput = document.querySelector('input[name$="-TOTAL_FORMS"]');
 
-    if (!body || !addBtn || !tpl || !totalFormsInput) {
-        console.log("formset elements missing", {
-            body: !!body,
-            addBtn: !!addBtn,
-            tpl: !!tpl,
-            totalFormsInput: !!totalFormsInput,
+    if (body && addBtn && tpl && totalFormsInput) {
+        // Add item
+        addBtn.addEventListener("click", function (e) {
+            e.preventDefault();
+
+            const index = parseInt(totalFormsInput.value || "0", 10);
+
+            let html = tpl.innerHTML
+                .replace(/__prefix__/g, index)
+                .replace(/__num__/g, index + 1);
+
+            const temp = document.createElement("tbody");
+            temp.innerHTML = html.trim();
+            const row = temp.firstElementChild;
+
+            body.appendChild(row);
+            totalFormsInput.value = index + 1;
+
+            setupRow(row);
+            renumberRows();
+            recalcTotals();
         });
-        return;
+
+        // Delete row button
+        body.addEventListener("click", function (e) {
+            const btn = e.target.closest(".delete-row-btn");
+            if (!btn) return;
+
+            e.preventDefault();
+            const row = btn.closest("tr.item-row");
+            if (!row) return;
+
+            const deleteField = row.querySelector("input[type='checkbox'][name*='-DELETE']");
+            if (deleteField) deleteField.checked = true;
+
+            row.style.display = "none";
+            renumberRows();
+            recalcTotals();
+        });
     }
 
-    addBtn.addEventListener("click", function (e) {
-        e.preventDefault();
-        console.log("Add item clicked");
+    // header tax & discount change -> recalc
+    const taxPercentInput = document.getElementById("id_tax_percent");
+    const discountAmountInput = document.getElementById("id_discount_amount");
+    if (taxPercentInput) taxPercentInput.addEventListener("input", recalcTotals);
+    if (discountAmountInput) discountAmountInput.addEventListener("input", recalcTotals);
 
-        const index = parseInt(totalFormsInput.value || "0", 10);
+    // 🔥 Final fix: Empty product rows → auto DELETE on submit
+    const invoiceForm = document.querySelector("form");
+    if (invoiceForm) {
+        invoiceForm.addEventListener("submit", function () {
+            console.log("Submit clicked – marking empty rows as DELETE");
+            const rows = document.querySelectorAll("#formset-body tr.item-row");
 
-        let html = tpl.innerHTML
-            .replace(/__prefix__/g, index)
-            .replace(/__num__/g, index + 1);
+            rows.forEach((row) => {
+                const productSelect = row.querySelector("select.product-select");
+                const deleteBox = row.querySelector("input[type='checkbox'][name*='-DELETE']");
 
-        const temp = document.createElement("tbody");
-        temp.innerHTML = html.trim();
-        const row = temp.firstElementChild;
+                if (!productSelect || !deleteBox) return;
 
-        body.appendChild(row);
-        totalFormsInput.value = index + 1;
+                // product choose pannala na -> delete mark
+                if (!productSelect.value) {
+                    deleteBox.checked = true;
+                    row.style.display = "none";
+                }
+            });
+        });
+    }
 
-        const newSelect = row.querySelector("select.product-select");
-        attachPriceHandler(newSelect);
-
-        renumberRows();
-    });
-
-    // 3) delete row
-    body.addEventListener("click", function (e) {
-        const btn = e.target.closest(".delete-row-btn");
-        if (!btn) return;
-
-        e.preventDefault();
-        const row = btn.closest("tr.item-row");
-        if (!row) return;
-
-        const deleteField = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-        if (deleteField) {
-            deleteField.checked = true;
-        }
-
-        row.style.display = "none";
-        renumberRows();
-    });
+    recalcTotals();
 });
 </script>
 
