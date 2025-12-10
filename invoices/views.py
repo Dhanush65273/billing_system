@@ -13,49 +13,31 @@ from django.db.models.functions import Coalesce
 
 from decimal import Decimal
 
+# views.py
+
 def invoice_create(request):
     if request.method == "POST":
         form = InvoiceForm(request.POST)
-        formset = InvoiceItemFormSet(request.POST)
+        formset = InvoiceItemFormSet(request.POST, prefix="items")  # 👈 IMPORTANT
 
         if form.is_valid() and formset.is_valid():
-            invoice = form.save(commit=False)
-            invoice.save()   # must save first to get invoice ID
-
+            invoice = form.save()
             items = formset.save(commit=False)
-            subtotal = Decimal("0.00")
-
             for item in items:
                 item.invoice = invoice
                 if not item.unit_price:
-                    item.unit_price = item.product.price
+                    item.unit_price = item.product.product_price
                 item.save()
-                subtotal += item.quantity * item.unit_price
-
-            tax_percent = invoice.tax_percent or 0
-            discount_amount = invoice.discount_amount or Decimal("0.00")
-
-            tax_amount = subtotal * Decimal(tax_percent) / Decimal("100")
-            invoice.total_amount = subtotal + tax_amount - discount_amount
-            invoice.save()
-
             return redirect("invoice_list")
-
     else:
         form = InvoiceForm()
-        formset = InvoiceItemFormSet()
+        formset = InvoiceItemFormSet(prefix="items")  # 👈 SAME PREFIX HERE ALSO
 
     products = Product.objects.all()
-
     return render(
         request,
         "invoices/invoice_form.html",
-        {
-            "form": form,
-            "items": formset,
-            "products": products,
-            "title": "Create Invoice",
-        },
+        {"form": form, "items": formset, "products": products},
     )
 
 

@@ -6,6 +6,18 @@
 {% block content %}
 <h2>Create Invoice</h2>
 
+<style>
+    /* Delete checkboxes hide */
+    input[type="checkbox"][name$="-DELETE"] {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0;
+        height: 0;
+        margin: 0;
+        padding: 0;
+    }
+</style>
+
 <form method="post">
     {% csrf_token %}
 
@@ -37,7 +49,9 @@
 
     <h4 class="mt-4">Items</h4>
 
-    <table class="table table-bordered">
+    {{ items.management_form }}
+
+    <table class="table table-bordered" id="items-table">
         <thead>
             <tr>
                 <th style="width:40px;">#</th>
@@ -47,53 +61,208 @@
                 <th style="width:70px;">Delete</th>
             </tr>
         </thead>
-        <tbody>
-            {{ items.management_form }}
+        <tbody id="formset-body">
             {% for f in items.forms %}
             <tr class="item-row">
-                <td>{{ forloop.counter }}</td>
+                <td class="row-number">{{ forloop.counter }}</td>
 
                 <!-- PRODUCT SELECT -->
                 <td>
-    <select
-        name="{{ f.product.html_name }}"
-        id="{{ f.product.id_for_label }}"
-        class="form-select product-select">
-        <option value="">---------</option>
-        {% for p in products %}
-            <option value="{{ p.id }}" data-price="{{ p.product_price }}">
-                {{ p.name }}
-            </option>
-        {% endfor %}
-    </select>
-</td>
-
+                    <select
+                        name="{{ f.product.html_name }}"
+                        id="{{ f.product.id_for_label }}"
+                        class="form-select product-select">
+                        <option value="">---------</option>
+                        {% for p in products %}
+                            <option value="{{ p.id }}"
+                                    data-price="{{ p.product_price }}"
+                                    {% if f.instance.product_id == p.id %}selected{% endif %}>
+                                {{ p.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </td>
 
                 <!-- QUANTITY -->
-                <td>
-                    {{ f.quantity }}
-                </td>
+                <td>{{ f.quantity }}</td>
 
                 <!-- UNIT PRICE -->
-                <td>
-                    {{ f.unit_price }}
-                </td>
+                <td>{{ f.unit_price }}</td>
 
-                <!-- DELETE (only for existing rows) -->
-                <td>
-                    {% if f.instance.pk %}
-                        {{ f.DELETE }}
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
+                <td class="text-center">
+            {{ f.DELETE }}   {# checkbox form field – JS uses this #}
+            <button type="button"
+                    class="btn btn-sm btn-danger delete-row-btn">
+                ✕
+            </button>
+        </td>
+    </tr>
+    {% endfor %}
+</tbody>
+
     </table>
 
+    <button type="button" class="btn btn-outline-success mb-3" id="add-row-btn">
+        + Add Item
+    </button>
+
+    <br>
     <button type="submit" class="btn btn-success">Create Invoice</button>
     <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Cancel</a>
 </form>
 
-<!-- Our JS -->
-<script src="{% static 'invoices/js/invoice_form.js' %}"></script>
+<script type="text/template" id="empty-row">
+<tr class="item-row">
+    <td class="row-number">__num__</td>
+
+    <td>
+        <select name="items-__prefix__-product"
+                class="form-select product-select">
+            <option value="">---------</option>
+            {% for p in products %}
+                <option value="{{ p.id }}"
+                        data-price="{{ p.product_price }}">{{ p.name }}</option>
+            {% endfor %}
+        </select>
+    </td>
+
+    <td>
+        <input type="number"
+               name="items-__prefix__-quantity"
+               class="form-control"
+               value="1">
+    </td>
+
+    <td>
+        <input type="text"
+               name="items-__prefix__-unit_price"
+               class="form-control"
+               value="0.00">
+    </td>
+
+    <td class="text-center">
+        <input type="checkbox"
+               name="items-__prefix__-DELETE"
+               style="display:none;">
+        <button type="button"
+                class="btn btn-sm btn-danger delete-row-btn">
+            ✕
+        </button>
+    </td>
+</tr>
+</script>
+
+{# --------- INLINE JS (NO external file) --------- #}
+<script>
+console.log("invoice_form inline JS loaded");
+
+// unit price autofill for one select
+function attachPriceHandler(select) {
+    if (!select) return;
+    if (select.__priceHandlerAttached) return;
+    select.__priceHandlerAttached = true;
+
+    select.addEventListener("change", function () {
+        const row = select.closest("tr");
+        if (!row) return;
+
+        const opt = select.options[select.selectedIndex];
+        const price = opt.getAttribute("data-price") || "";
+
+        const unitPriceInput = row.querySelector('input[name$="-unit_price"]');
+        if (!unitPriceInput) {
+            console.log("unit_price input not found in row", row);
+            return;
+        }
+
+        console.log("product changed", {
+            productId: select.value,
+            price: price,
+            unitPriceInputName: unitPriceInput.name,
+        });
+
+        if (price !== "") {
+            unitPriceInput.value = price;
+        }
+    });
+}
+
+function renumberRows() {
+    const rows = document.querySelectorAll("#formset-body tr.item-row");
+    let i = 1;
+    rows.forEach((row) => {
+        if (row.style.display === "none") return;
+        const cell = row.querySelector(".row-number");
+        if (cell) {
+            cell.textContent = i;
+            i += 1;
+        }
+    });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    // 1) existing rows
+    const selects = document.querySelectorAll("select.product-select");
+    console.log("found product selects:", selects.length);
+    selects.forEach(attachPriceHandler);
+
+    // 2) dynamic rows
+    const body = document.getElementById("formset-body");
+    const addBtn = document.getElementById("add-row-btn");
+    const tpl = document.getElementById("empty-row");
+    const totalFormsInput = document.querySelector('input[name$="-TOTAL_FORMS"]');
+
+    if (!body || !addBtn || !tpl || !totalFormsInput) {
+        console.log("formset elements missing", {
+            body: !!body,
+            addBtn: !!addBtn,
+            tpl: !!tpl,
+            totalFormsInput: !!totalFormsInput,
+        });
+        return;
+    }
+
+    addBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        console.log("Add item clicked");
+
+        const index = parseInt(totalFormsInput.value || "0", 10);
+
+        let html = tpl.innerHTML
+            .replace(/__prefix__/g, index)
+            .replace(/__num__/g, index + 1);
+
+        const temp = document.createElement("tbody");
+        temp.innerHTML = html.trim();
+        const row = temp.firstElementChild;
+
+        body.appendChild(row);
+        totalFormsInput.value = index + 1;
+
+        const newSelect = row.querySelector("select.product-select");
+        attachPriceHandler(newSelect);
+
+        renumberRows();
+    });
+
+    // 3) delete row
+    body.addEventListener("click", function (e) {
+        const btn = e.target.closest(".delete-row-btn");
+        if (!btn) return;
+
+        e.preventDefault();
+        const row = btn.closest("tr.item-row");
+        if (!row) return;
+
+        const deleteField = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+        if (deleteField) {
+            deleteField.checked = true;
+        }
+
+        row.style.display = "none";
+        renumberRows();
+    });
+});
+</script>
+
 {% endblock %}
