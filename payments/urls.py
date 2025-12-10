@@ -18,9 +18,10 @@ urlpatterns = [
     path("reports/", views.payment_report, name="payment_report"),
     path("reports/csv/", views.payment_report_csv, name="payment-report-csv"),
 
-    # ---------- Monthly Report ----------
+    # payments/urls.py
     path("reports/monthly/", views.monthly_report, name="monthly_report"),
     path("reports/monthly/csv/", views.monthly_report_csv, name="monthly_report_csv"),
+
 
 
     # ---------- Product-wise Report ----------

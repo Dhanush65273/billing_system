@@ -76,17 +76,50 @@ def _parse_date(value):
     except ValueError:
         return None
 
+from datetime import date
+from decimal import Decimal
+
+from django.db.models import Sum, DecimalField
+from django.db.models.functions import Coalesce
+from django.shortcuts import render
+
+from customers.models import Customer
+from products.models import Product
+from invoices.models import Invoice
+from payments.models import Payment
+
+
 def dashboard(request):
-    """
-    Simple home dashboard - counts & total sales.
-    """
+    today = date.today()
+
+    # Basic counts
     total_customers = Customer.objects.count()
     total_products = Product.objects.count()
     total_invoices = Invoice.objects.count()
+    total_payments_count = Payment.objects.count()
 
-    total_sales = Invoice.objects.aggregate(
+    # ----- SALES TOTALS (using grand_total property) -----
+    all_invoices = Invoice.objects.all()
+
+    total_sales = Decimal("0.00")
+    today_sales = Decimal("0.00")
+    month_sales = Decimal("0.00")
+
+    for inv in all_invoices:
+        grand = getattr(inv, "grand_total", inv.total_amount or Decimal("0.00"))
+
+        total_sales += grand
+
+        if inv.date == today:
+            today_sales += grand
+
+        if inv.date.year == today.year and inv.date.month == today.month:
+            month_sales += grand
+
+    # ----- PAYMENTS TOTAL (actual money received) -----
+    total_payments = Payment.objects.filter(status="paid").aggregate(
         total=Coalesce(
-            Sum("total_amount"),
+            Sum("amount"),
             0,
             output_field=DecimalField(max_digits=10, decimal_places=2),
         )
@@ -96,9 +129,15 @@ def dashboard(request):
         "total_customers": total_customers,
         "total_products": total_products,
         "total_invoices": total_invoices,
+        "total_payments_count": total_payments_count,
+
         "total_sales": total_sales,
+        "today_sales": today_sales,
+        "month_sales": month_sales,
+        "total_payments": total_payments,
     }
     return render(request, "dashboard.html", context)
+
 
 
 
@@ -342,18 +381,25 @@ def product_report_csv(request):
 
     return response
 
+from decimal import Decimal
+from django.db.models import Sum, Q, F, DecimalField, ExpressionWrapper
+from django.db.models.functions import Coalesce
+from invoices.models import Invoice
+from django.shortcuts import render
+
+
 def invoice_report(request):
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
 
     invoices = Invoice.objects.select_related("customer")
+
     if date_from:
         invoices = invoices.filter(date__gte=date_from)
     if date_to:
         invoices = invoices.filter(date__lte=date_to)
 
     # ---- per-invoice values ----
-
     # total_paid = sum of successful payments
     invoices = invoices.annotate(
         total_paid=Coalesce(
@@ -366,46 +412,38 @@ def invoice_report(request):
         )
     )
 
-    # outstanding = total_amount - total_paid
-    invoices = invoices.annotate(
-        outstanding=ExpressionWrapper(     # 👈 balance -> outstanding
-            F("total_amount") - F("total_paid"),
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        )
-    )
+    # order invoices for display
+    invoices = invoices.order_by("-date", "-id")
 
-    # ---- overall totals ----
+    # ---- overall totals (manual using grand_total + balance) ----
+    total_amount = Decimal("0.00")
+    total_paid_sum = Decimal("0.00")
+    total_balance_sum = Decimal("0.00")
 
-    totals_raw = invoices.aggregate(
-        total_invoices=Coalesce(
-            Sum("total_amount"),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        ),
-        total_paid=Coalesce(
-            Sum(
-                "payments__amount",
-                filter=Q(payments__status="paid"),
-            ),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        ),
-    )
+    for inv in invoices:
+        # invoice total – use grand_total property if available
+        grand = getattr(inv, "grand_total", inv.total_amount or Decimal("0.00"))
+        paid = inv.total_paid or Decimal("0.00")
+        balance = grand - paid
+
+        total_amount += grand
+        total_paid_sum += paid
+        total_balance_sum += balance
 
     totals = {
-        "total_invoices": totals_raw["total_invoices"],
-        "total_paid": totals_raw["total_paid"],
-        # total balance = invoices – paid
-        "total_balance": totals_raw["total_invoices"] - totals_raw["total_paid"],
+        "total_amount": total_amount,      # sum of inv.grand_total
+        "total_paid": total_paid_sum,      # sum of paid amounts
+        "total_balance": total_balance_sum # sum(grand_total - paid)
     }
 
     context = {
-        "invoices": invoices.order_by("-date", "-id"),
+        "invoices": invoices,
         "date_from": date_from,
         "date_to": date_to,
         "totals": totals,
     }
     return render(request, "payments/invoice_report.html", context)
+
 
 
 def invoice_report_csv(request):
@@ -736,91 +774,93 @@ def customer_report_csv(request):
 
 from datetime import date
 from decimal import Decimal
-from collections import defaultdict
+import csv
 
+from django.http import HttpResponse
 from django.shortcuts import render
+
 from invoices.models import Invoice
 
 
-def monthly_report(request):
-    year_str = request.GET.get("year")
-    if year_str and year_str.isdigit():
-        year = int(year_str)
-    else:
-        year = date.today().year
-        year_str = str(year)
+def _build_monthly_data(year: int):
+    """Year-ku month wise count + grand_total sum build pannum helper."""
+    invoices_qs = Invoice.objects.filter(date__year=year)
 
-    invoices = (
-        Invoice.objects
-        .filter(date__year=year)
-        .prefetch_related("items")   # so inv.total is cheap
-    )
+    buckets = {}  # key = month_start_date, value = dict with totals
 
-    summary_map = defaultdict(
-        lambda: {"total_invoices": 0, "total_amount": Decimal("0.00")}
-    )
+    for inv in invoices_qs:
+        # same month key (1st day of that month)
+        month_start = inv.date.replace(day=1)
 
-    for inv in invoices:
-        month_key = inv.date.replace(day=1)
-        summary_map[month_key]["total_invoices"] += 1
-        summary_map[month_key]["total_amount"] += inv.total   # ⭐ same as list
-
-    summary = []
-    for month, data in sorted(summary_map.items(), key=lambda x: x[0]):
-        summary.append(
-            {
-                "month": month,
-                "total_invoices": data["total_invoices"],
-                "total_amount": data["total_amount"],
+        if month_start not in buckets:
+            buckets[month_start] = {
+                "month": month_start,
+                "total_invoices": 0,
+                "total_amount": Decimal("0.00"),
             }
-        )
+
+        buckets[month_start]["total_invoices"] += 1
+
+        # inv.grand_total property la irukka real amount use pannrom
+        gt = getattr(inv, "grand_total", None)
+        if gt is None:
+            gt = Decimal("0.00")
+
+        buckets[month_start]["total_amount"] += gt
+
+    # sort by month
+    monthly_data = sorted(buckets.values(), key=lambda b: b["month"])
+    return monthly_data
+
+
+def monthly_report(request):
+    year = request.GET.get("year")
+    if not year:
+        year = date.today().year
+    else:
+        try:
+            year = int(year)
+        except ValueError:
+            year = date.today().year
+
+    monthly_data = _build_monthly_data(year)
 
     context = {
-        "year": year_str,
-        "summary": summary,
+        "year": year,
+        "monthly_data": monthly_data,
     }
     return render(request, "payments/monthly_report.html", context)
 
+
 def monthly_report_csv(request):
-    year_str = request.GET.get("year") or ""
-    try:
-        year = int(year_str)
-    except:
+    year = request.GET.get("year")
+    if not year:
         year = date.today().year
-        year_str = str(year)
+    else:
+        try:
+            year = int(year)
+        except ValueError:
+            year = date.today().year
 
-    qs = (
-        Invoice.objects
-        .filter(date__year=year)
-        .annotate(month=TruncMonth("date"))
-        .values("month")
-        .annotate(
-            total_invoices=Count("id"),
-            total_amount=Sum("total_amount"),
-        )
-        .order_by("month")
-    )
+    monthly_data = _build_monthly_data(year)
 
-    rows = list(qs)
-
-    # ---- CSV Response ----
     response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = f"attachment; filename=monthly_report_{year}.csv"
+    response["Content-Disposition"] = f'attachment; filename="monthly_report_{year}.csv"'
+
     writer = csv.writer(response)
+    writer.writerow(["S.No", "Month", "Total Invoices", "Total Amount (₹)"])
 
-    writer.writerow([
-        "Month",
-        "Total Invoices",
-        "Total Invoice Amount",
-    ])
-
-    for r in rows:
+    for idx, row in enumerate(monthly_data, start=1):
+        month_str = row["month"].strftime("%b %Y")
         writer.writerow([
-            r["month"].strftime("%B %Y") if r["month"] else "",
-            r["total_invoices"],
-            r["total_amount"],
+            idx,
+            month_str,
+            row["total_invoices"],
+            row["total_amount"],  # already Decimal, CSV la value ah pogum
         ])
+
     return response
+
 
 
 from decimal import Decimal

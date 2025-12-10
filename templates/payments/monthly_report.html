@@ -1,22 +1,75 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 
 {% block title %}Monthly Summary{% endblock %}
 
 {% block content %}
 <h2>Monthly Summary</h2>
 
-<form method="get" class="row g-3 mb-3">
-    <div class="col-md-3">
-        <label class="form-label">Year</label>
-        <input type="text" name="year" value="{{ year }}" class="form-control">
-    </div>
-    <div class="col-md-3 d-flex align-items-end">
-        <button type="submit" class="btn btn-primary me-2">Filter</button>
-        <a href="{% url 'monthly_report' %}" class="btn btn-outline-secondary">Clear</a>
+<!-- 🔥 Reports Navigation Tabs -->
+<div class="d-flex gap-3 mb-4">
+
+    <a href="{% url 'payment_report' %}"
+       class="btn btn-sm btn-outline-primary">
+       Payments
+    </a>
+
+    <a href="{% url 'customer_report' %}"
+       class="btn btn-sm btn-outline-primary">
+       Customer Wise
+    </a>
+
+    <a href="{% url 'product_report' %}"
+       class="btn btn-sm btn-outline-primary">
+       Product Wise
+    </a>
+
+    <a href="{% url 'invoice_report' %}"
+       class="btn btn-sm btn-outline-primary">
+       Invoice Wise
+    </a>
+
+    <!-- 🔵 ACTIVE TAB (Monthly Summary) -->
+    <a href="{% url 'monthly_report' %}"
+       class="btn btn-sm btn-primary">
+       Monthly Summary
+    </a>
+
+    <a href="{% url 'outstanding_report' %}"
+       class="btn btn-sm btn-outline-primary">
+       Outstanding
+    </a>
+
+    <a href="{% url 'customer_summary_report' %}"
+       class="btn btn-sm btn-outline-primary">
+       Customer Summary
+    </a>
+
+</div>
+<!-- 🔥 Tabs End -->
+
+
+
+<form method="get" class="mb-4">
+    <div class="row g-2">
+        <div class="col-md-3">
+            <label class="form-label">Year</label>
+            <input type="number" name="year" class="form-control"
+                   value="{{ year }}">
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary me-2">Filter</button>
+            <a href="{% url 'monthly_report' %}" class="btn btn-outline-secondary">Clear</a>
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+            <a href="{% url 'monthly_report_csv' %}?year={{ year }}"
+               class="btn btn-outline-success">
+                Download CSV
+            </a>
+        </div>
     </div>
 </form>
 
-<table class="table table-bordered table-striped">
+<table class="table table-striped align-middle">
     <thead>
         <tr>
             <th>S.No</th>
@@ -26,16 +79,16 @@
         </tr>
     </thead>
     <tbody>
-        {% for row in summary %}
+        {% for row in monthly_data %}
         <tr>
             <td>{{ forloop.counter }}</td>
             <td>{{ row.month|date:"M Y" }}</td>
             <td>{{ row.total_invoices }}</td>
-            <td>{{ row.total_amount }}</td>
+            <td>{{ row.total_amount|default:0|floatformat:2 }}</td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="4" class="text-center">No data found.</td>
+            <td colspan="4" class="text-center">No data for this year</td>
         </tr>
         {% endfor %}
     </tbody>

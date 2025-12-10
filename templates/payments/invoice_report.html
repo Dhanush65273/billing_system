@@ -39,7 +39,11 @@
        class="btn btn-sm btn-outline-primary">
        Outstanding
     </a>
-    <a href="{% url 'customer_summary_report' %}" class="btn btn-outline-primary">Customer Summary</a>
+
+    <a href="{% url 'customer_summary_report' %}"
+       class="btn btn-sm btn-outline-primary">
+       Customer Summary
+    </a>
 
 </div>
 <!-- 🔥 Tabs End -->
@@ -81,10 +85,15 @@
       <td>{{ inv.id }}</td>
       <td>{{ inv.date|date:"d-m-Y" }}</td>
       <td>{{ inv.customer.name }}</td>
-      <td>{{ inv.total_amount }}</td>
-      <td>{{ inv.total_paid }}</td>
-      <td>{{ inv.balance }}</td>
-      <td>{{ inv.get_status_display }}</td>
+
+      <!-- Invoice total (grand_total property) -->
+      <td>{{ inv.grand_total|default_if_none:0|floatformat:2 }}</td>
+
+      <!-- Paid & Balance -->
+      <td>{{ inv.total_paid|default_if_none:0|floatformat:2 }}</td>
+      <td>{{ inv.balance|default_if_none:0|floatformat:2 }}</td>
+
+      <td>{{ inv.status }}</td>
     </tr>
     {% empty %}
     <tr>
@@ -92,13 +101,15 @@
     </tr>
     {% endfor %}
   </tbody>
+
   {% if totals %}
   <tfoot>
     <tr>
       <th colspan="4" class="text-end">Totals:</th>
-      <th>{{ totals.total_invoices }}</th>
-      <th>{{ totals.total_paid }}</th>
-      <th>{{ totals.total_balance }}</th>
+      <!-- ✅ use money totals, not total_invoices -->
+      <th>{{ totals.total_amount|default_if_none:0|floatformat:2 }}</th>
+      <th>{{ totals.total_paid|default_if_none:0|floatformat:2 }}</th>
+      <th>{{ totals.total_balance|default_if_none:0|floatformat:2 }}</th>
       <th></th>
     </tr>
   </tfoot>
@@ -109,4 +120,5 @@
    class="btn btn-outline-primary">
   Download CSV
 </a>
+
 {% endblock %}

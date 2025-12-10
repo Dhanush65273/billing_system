@@ -1,74 +1,74 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
+
 {% block content %}
 
 <h2 class="mb-4">Dashboard</h2>
 
-<div class="row mb-4">
-  <div class="col-md-3 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="text-muted">Total Customers</h6>
-        <h3 class="mb-0">{{ total_customers }}</h3>
-      </div>
-    </div>
-  </div>
+<div class="row g-4">
 
-  <div class="col-md-3 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="text-muted">Total Products</h6>
-        <h3 class="mb-0">{{ total_products }}</h3>
-      </div>
+    <!-- Total Customers -->
+    <div class="col-md-3">
+        <div class="card shadow-sm p-3">
+            <h5>Total Customers</h5>
+            <h3>{{ total_customers }}</h3>
+        </div>
     </div>
-  </div>
 
-  <div class="col-md-3 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="text-muted">Total Invoices</h6>
-        <h3 class="mb-0">{{ total_invoices }}</h3>
-      </div>
+    <!-- Total Products -->
+    <div class="col-md-3">
+        <div class="card shadow-sm p-3">
+            <h5>Total Products</h5>
+            <h3>{{ total_products }}</h3>
+        </div>
     </div>
-  </div>
 
-  <div class="col-md-3 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="text-muted">Total Payments</h6>
-        <h3 class="mb-0">{{ total_payments }}</h3>
-      </div>
+    <!-- Total Invoices -->
+    <div class="col-md-3">
+        <div class="card shadow-sm p-3">
+            <h5>Total Invoices</h5>
+            <h3>{{ total_invoices }}</h3>
+        </div>
     </div>
-  </div>
+
+    <!-- Total Payments Count -->
+    <div class="col-md-3">
+        <div class="card shadow-sm p-3">
+            <h5>Total Payments</h5>
+            <h3>{{ total_payments_count }}</h3>
+        </div>
+    </div>
+
 </div>
 
-<div class="row">
-  <div class="col-md-4 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="text-muted">Total Sales</h6>
-        <h3 class="mb-0">₹ {{ total_sales }}</h3>
-      </div>
-    </div>
-  </div>
+<hr class="my-4">
 
-  <div class="col-md-4 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="text-muted">Today Sales</h6>
-        <h3 class="mb-0">₹ {{ today_sales }}</h3>
-      </div>
-    </div>
-  </div>
+<div class="row g-4">
 
-  <div class="col-md-4 mb-3">
-    <div class="card">
-      <div class="card-body">
-        <h6 class="text-muted">This Month Sales</h6>
-        <h3 class="mb-0">₹ {{ month_sales }}</h3>
-      </div>
+    <!-- Total Sales -->
+    <div class="col-md-4">
+        <div class="card shadow-sm p-3">
+            <h5>Total Sales</h5>
+            <h3>₹ {{ total_sales|default:0|floatformat:2 }}</h3>
+        </div>
     </div>
-  </div>
+
+    <!-- Today Sales -->
+    <div class="col-md-4">
+        <div class="card shadow-sm p-3">
+            <h5>Today Sales</h5>
+            <h3>₹ {{ today_sales|default:0|floatformat:2 }}</h3>
+        </div>
+    </div>
+
+    <!-- This Month Sales -->
+    <div class="col-md-4">
+        <div class="card shadow-sm p-3">
+            <h5>This Month Sales</h5>
+            <h3>₹ {{ month_sales|default:0|floatformat:2 }}</h3>
+        </div>
+    </div>
+
 </div>
 
 {% endblock %}
