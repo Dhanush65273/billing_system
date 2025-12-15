@@ -1,19 +1,33 @@
 # invoices/forms.py
+
 from django import forms
 from django.forms import inlineformset_factory
 
 from .models import Invoice, InvoiceItem
-from products.models import Product   # 🔹 add this
 
 
+# =========================
+# Invoice Main Form
+# =========================
 class InvoiceForm(forms.ModelForm):
     date = forms.DateField(
-        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"})
+        widget=forms.DateInput(
+            attrs={
+                "type": "date",
+                "class": "form-control",
+            }
+        )
     )
 
     class Meta:
         model = Invoice
-        fields = ["customer", "date", "tax_percent", "discount_amount", "status"]
+        fields = [
+            "customer",
+            "date",
+            "tax_percent",
+            "discount_amount",
+            "status",
+        ]
         widgets = {
             "customer": forms.Select(attrs={"class": "form-select"}),
             "tax_percent": forms.NumberInput(
@@ -27,30 +41,33 @@ class InvoiceForm(forms.ModelForm):
 
 
 class InvoiceItemForm(forms.ModelForm):
+    empty_permitted = True   # 🔥 THIS IS THE KEY
     class Meta:
         model = InvoiceItem
         fields = ["product", "quantity", "unit_price"]
+        widgets = {
+            "product": forms.Select(attrs={"class": "form-select"}),
+            "quantity": forms.NumberInput(attrs={"class": "form-control"}),
+            "unit_price": forms.NumberInput(attrs={"class": "form-control"}),
+        }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def clean(self):
+        cleaned_data = super().clean()
 
-        # 🟢 ADD PRICE INSIDE <option data-price="...">
-        product_field = self.fields['product']
-        product_field.widget.attrs.update({"class": "form-select"})
+        product = cleaned_data.get("product")
+        quantity = cleaned_data.get("quantity")
+        unit_price = cleaned_data.get("unit_price")
 
-        new_choices = []
-        for p in product_field.queryset:
-            new_choices.append(
-                (p.id, f'{p.name}'),  # normal name, id is value
-            )
-        product_field.widget.choices = new_choices
+        # 🔥 If product empty → skip this row completely
+        if not product:
+            cleaned_data["DELETE"] = True
 
-
+        return cleaned_data
 
 InvoiceItemFormSet = inlineformset_factory(
     Invoice,
     InvoiceItem,
     form=InvoiceItemForm,
-    extra=3,        # 3 rows
-    can_delete=True,
+    extra=3,
+    can_delete=True
 )

@@ -1,5 +1,7 @@
 # payments/models.py
+
 from django.db import models
+from customers.models import Customer      # 🔥 ADD
 from invoices.models import Invoice
 
 
@@ -18,9 +20,22 @@ class Payment(models.Model):
         ("other", "Other"),
     ]
 
-    invoice = models.ForeignKey(
-        Invoice, on_delete=models.CASCADE, related_name="payments"
+    # 🔥 NEW: Payment is primarily based on CUSTOMER
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name="payments"
     )
+
+    # 🔥 KEEP: invoice optional (auto allocation / manual link)
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.CASCADE,
+        related_name="payments",
+        null=True,
+        blank=True
+    )
+
     date = models.DateField()
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     method = models.CharField(max_length=20, choices=METHOD_CHOICES)
@@ -31,15 +46,18 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Payment #{self.id} - Invoice #{self.invoice_id}"
+        if self.invoice:
+            return f"Payment #{self.id} - Invoice #{self.invoice_id}"
+        return f"Payment #{self.id} - Customer {self.customer.name}"
 
-    # 🔥 IMPORTANT: whenever payment changes, update invoice status/balance
-
+    # 🔥 IMPORTANT: invoice irundha mattum status update
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        self.invoice.update_status_from_payments()
+        if self.invoice:
+            self.invoice.update_status_from_payments()
 
     def delete(self, *args, **kwargs):
         inv = self.invoice
         super().delete(*args, **kwargs)
-        inv.update_status_from_payments()
+        if inv:
+            inv.update_status_from_payments()

@@ -1,15 +1,40 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
+{% block title %}{{ title|default:"Add Product" }}{% endblock %}
+
 {% block content %}
+<div class="container">
+    <h2 class="mb-4">{{ title|default:"Add Product" }}</h2>
 
-<h2>{{ title }}</h2>
+    <form method="post">
+        {% csrf_token %}
 
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label class="form-label">Product Name</label>
+                {{ form.name }}
+            </div>
+        </div>
 
-    <button class="btn btn-success" type="submit">Save</button>
-    <a href="{% url 'product_list' %}" class="btn btn-secondary">Cancel</a>
-</form>
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label class="form-label">SKU</label>
+                {{ form.sku }}
+            </div>
+        </div>
 
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label class="form-label">Price</label>
+                {{ form.price }}
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Stock</label>
+                {{ form.stock }}
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-success">Save</button>
+        <a href="{% url 'product_list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
 {% endblock %}
-

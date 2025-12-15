@@ -4,7 +4,10 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2 class="mb-0">Invoices</h2>
-  <a href="{% url 'invoice_create' %}" class="btn btn-primary">New Invoice</a>
+<a href="{% url 'invoice_create' %}" class="btn btn-primary">
+    New Invoice
+</a>
+
 </div>
 
 <form method="get" class="row g-2 mb-3">
@@ -35,9 +38,10 @@
       <th>Customer</th>
       <th>Total (₹)</th>
       <th>Status</th>
-      <th>Actions</th>
+      <th style="width: 220px;">Actions</th>
     </tr>
   </thead>
+
   <tbody>
     {% for inv in invoices %}
     <tr>
@@ -56,14 +60,22 @@
           <span class="badge bg-danger">UNPAID</span>
         {% endif %}
       </td>
+
+      <!-- ✅ ACTIONS (ALL INSIDE ONE TD) -->
       <td>
-        <a href="{% url 'invoice_detail' inv.id %}" class="btn btn-sm btn-info">
+        <a href="{% url 'invoice_detail' inv.id %}"
+           class="btn btn-sm btn-info">
           View
+        </a>
+
+        <a href="{% url 'invoice_edit' inv.id %}"
+           class="btn btn-sm btn-warning">
+          Edit
         </a>
 
         <form method="post"
               action="{% url 'invoice_delete' inv.id %}"
-              style="display:inline;">
+              class="d-inline">
           {% csrf_token %}
           <button type="submit"
                   class="btn btn-sm btn-danger"
@@ -73,6 +85,7 @@
         </form>
       </td>
     </tr>
+
     {% empty %}
     <tr>
       <td colspan="6" class="text-center">No invoices yet.</td>

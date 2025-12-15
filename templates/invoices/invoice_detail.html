@@ -1,84 +1,100 @@
-{% extends 'base.html' %}
-{% block title %}Invoice {{ invoice.id }}{% endblock %}
+{% extends "base.html" %}
+{% block title %}Invoice #{{ invoice.id }}{% endblock %}
 
 {% block content %}
-<h2>Invoice #{{ invoice.id }}</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Invoice #{{ invoice.id }}</h2>
 
-<p><strong>Date:</strong> {{ invoice.date|date:"M d, Y" }}</p>
-<p><strong>Customer:</strong> {{ invoice.customer.name }}</p>
-<p><strong>Status:</strong> {{ invoice.get_status_display }}</p>
+    <!-- 🔥 PDF download button (next step-la URL connect pannalaam) -->
+    <a href="{% url 'invoice_pdf' invoice.id %}" class="btn btn-outline-danger">
+   Download PDF
+    </a>
 
-<h4 class="mt-4">Items</h4>
+</div>
+
+<hr>
+
+<!-- ================= Invoice Info ================= -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <h5>Customer Details</h5>
+        <p class="mb-1"><strong>Name:</strong> {{ invoice.customer.name }}</p>
+        <p class="mb-1"><strong>Date:</strong> {{ invoice.date|date:"d-m-Y" }}</p>
+        <p class="mb-1">
+            <strong>Status:</strong>
+            {% if invoice.status == "paid" %}
+                <span class="badge bg-success">PAID</span>
+            {% elif invoice.status == "partial" %}
+                <span class="badge bg-warning text-dark">PARTIAL</span>
+            {% else %}
+                <span class="badge bg-danger">UNPAID</span>
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<!-- ================= Items Table ================= -->
 <table class="table table-bordered">
-  <thead>
-    <tr>
-      <th>S.No</th>
-      <th>Product</th>
-      <th>Qty</th>
-      <th>Unit price</th>
-      <th>Line total</th>
-    </tr>
-  </thead>
-
-  <tbody>
-    {% for item in invoice.items.all %}
-    <tr>
-      <td>{{ forloop.counter }}</td>
-      <td>{{ item.product.name }}</td>
-      <td>{{ item.quantity }}</td>
-      <td>{{ item.unit_price }}</td>
-      <td>{{ item.line_total }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-
-  <!-- NEW: row showing total after discount + tax -->
-  <tfoot>
-    <tr>
-      <th colspan="4" class="text-end">Total (after discount & tax)</th>
-      <th>{{ grand_total }}</th>
-    </tr>
-  </tfoot>
+    <thead class="table-light">
+        <tr>
+            <th>S.No</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Unit Price (₹)</th>
+            <th>Line Total (₹)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr>
+            <td>{{ forloop.counter }}</td>
+            <td>{{ item.product.name }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ item.unit_price|floatformat:2 }}</td>
+            <td>{{ item.line_total|floatformat:2 }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
 
-
-<div class="d-flex justify-content-end">
-  <div style="min-width:260px;">
-
-    <div class="d-flex justify-content-between">
-      <span>Subtotal:</span>
-      <span>{{ subtotal }}</span>
+<!-- ================= Totals ================= -->
+<div class="row justify-content-end">
+    <div class="col-md-5">
+        <table class="table">
+            <tr>
+                <th>Subtotal</th>
+                <td class="text-end">₹ {{ subtotal|floatformat:2 }}</td>
+            </tr>
+            <tr>
+                <th>Discount</th>
+                <td class="text-end">₹ {{ discount|floatformat:2 }}</td>
+            </tr>
+            <tr>
+                <th>Tax ({{ tax_percent }}%)</th>
+                <td class="text-end">₹ {{ tax_amount|floatformat:2 }}</td>
+            </tr>
+            <tr class="table-success">
+                <th>Grand Total</th>
+                <td class="text-end fw-bold">
+                    ₹ {{ grand_total|floatformat:2 }}
+                </td>
+            </tr>
+            <tr>
+                <th>Paid</th>
+                <td class="text-end">₹ {{ total_paid|floatformat:2 }}</td>
+            </tr>
+            <tr class="table-warning">
+                <th>Balance</th>
+                <td class="text-end fw-bold">
+                    ₹ {{ balance|floatformat:2 }}
+                </td>
+            </tr>
+        </table>
     </div>
-
-    <div class="d-flex justify-content-between">
-      <span>Discount:</span>
-      <span>{{ discount }}</span>
-    </div>
-
-    <div class="d-flex justify-content-between">
-      <span>Tax (%):</span>
-      <span>{{ tax_percent|floatformat:2 }}</span>
-    </div>
-
-    <div class="d-flex justify-content-between">
-      <span>Tax Amount:</span>
-      <span>{{ tax_amount }}</span>
-    </div>
-
-    <div class="d-flex justify-content-between">
-      <span>Total:</span>
-      <span>{{ grand_total }}</span>
-    </div>
-
-    <div class="d-flex justify-content-between">
-      <span>Paid:</span>
-      <span>{{ total_paid }}</span>
-    </div>
-
-    <div class="d-flex justify-content-between text-danger fw-bold">
-      <span>Balance:</span>
-      <span>{{ invoice.balance|floatformat:2 }}</span>
-    </div>
-  </div>
 </div>
+
+<a href="{% url 'invoice_list' %}" class="btn btn-secondary mt-3">
+    Back to Invoices
+</a>
+
 {% endblock %}

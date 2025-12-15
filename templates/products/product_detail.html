@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Product: {{ product.name }}{% endblock %}
+
+{% block content %}
+<div class="container my-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">{{ product.name }}</h2>
+    <div>
+      <a href="{% url 'products:product_update' product.id %}" class="btn btn-sm btn-secondary me-2">Edit</a>
+
+      <form method="post" action="{% url 'products:product_delete' product.id %}" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-danger"
+                onclick="return confirm('Delete this product? This cannot be undone.');">
+          Delete
+        </button>
+      </form>
+
+      <a href="{% url 'products:product_list' %}" class="btn btn-sm btn-outline-secondary ms-2">Back</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6">
+          <p><strong>SKU:</strong> {{ product.sku|default:"-" }}</p>
+          <p><strong>Price:</strong> ₹ {{ product.product_price|floatformat:2 }}</p>
+          <p><strong>Stock:</strong> {{ product.stock }}</p>
+        </div>
+        <div class="col-md-6">
+          <p><strong>Description:</strong></p>
+          {% if product.description %}
+            <p>{{ product.description|linebreaksbr }}</p>
+          {% else %}
+            <p class="text-muted">No description provided.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

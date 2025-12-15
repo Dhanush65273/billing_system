@@ -49,19 +49,6 @@
 
     <h4 class="mt-4">Items</h4>
 
-{% if items.errors %}
-<div class="alert alert-danger">
-    <strong>Item Errors:</strong>
-    <ul>
-    {% for form in items.forms %}
-        {% for field, errors in form.errors.items %}
-            <li>{{ field }} - {{ errors }}</li>
-        {% endfor %}
-    {% endfor %}
-    </ul>
-</div>
-{% endif %}
-
     {{ items.management_form }}
 
     <table class="table table-bordered" id="items-table">
@@ -80,6 +67,7 @@
         <tbody id="formset-body">
     {% for f in items.forms %}
     <tr class="item-row">
+        {{ f.id }}
         <!-- ROW NUMBER -->
         <td class="row-number">{{ forloop.counter }}</td>
 
@@ -92,7 +80,7 @@
                 <option value="">---------</option>
                 {% for p in products %}
                     <option value="{{ p.id }}"
-                            data-price="{{ p.product_price }}"
+                            data-price="{{ p.price }}"
                             {% if f.instance.product_id == p.id %}selected{% endif %}>
                         {{ p.name }}
                     </option>
@@ -201,7 +189,7 @@
             <option value="">---------</option>
             {% for p in products %}
                 <option value="{{ p.id }}"
-                        data-price="{{ p.product_price }}">{{ p.name }}</option>
+                        data-price="{{ p.price }}">{{ p.name }}</option>
             {% endfor %}
         </select>
     </td>
@@ -392,7 +380,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const body = document.getElementById("formset-body");
     const addBtn = document.getElementById("add-row-btn");
     const tpl = document.getElementById("empty-row");
-    const totalFormsInput = document.querySelector('input[name$="-TOTAL_FORMS"]');
+    const totalFormsInput = document.getElementById("id_items-TOTAL_FORMS");
+
 
     if (body && addBtn && tpl && totalFormsInput) {
         // Add item

@@ -1,11 +1,17 @@
 from django.db import models
 
+# products/models.py
+
 class Product(models.Model):
-    name = models.CharField(max_length=200)
-    product_price = models.DecimalField(max_digits=10, decimal_places=2)
-    sku = models.CharField(max_length=50, null=True, blank=True)
-    stock = models.IntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
+    name = models.CharField(max_length=100)
+
+    sku = models.CharField(
+        max_length=50,
+        unique=True
+    )  # 🔥 NEW FIELD
+
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    stock = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
-        return self.name
+        return f"{self.name} ({self.sku})"

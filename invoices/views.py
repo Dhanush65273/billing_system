@@ -14,7 +14,9 @@ from django.db.models.functions import Coalesce
 from decimal import Decimal
 
 from django.db import transaction
-# NOTE: django.core.exceptions.ValidationError now use pannom, remove or leave it's ok
+from django.shortcuts import redirect, render
+from products.models import Product
+from .forms import InvoiceForm, InvoiceItemFormSet
 
 def invoice_create(request):
     if request.method == "POST":
@@ -24,29 +26,28 @@ def invoice_create(request):
         if form.is_valid() and formset.is_valid():
             with transaction.atomic():
                 invoice = form.save()
+
                 items = formset.save(commit=False)
 
                 for item in items:
                     item.invoice = invoice
 
-                    # unit price set pannalana product price use pannidalaam
+                    # unit price fallback
                     if not item.unit_price:
                         item.unit_price = item.product.price or 0
 
                     item.save()
 
-                    # 🔻 STOCK REDUCE – simple version, check mattum illa
-                    product = item.product
-                    if product.stock is not None and item.quantity is not None:
-                        product.stock = (product.stock or 0) - item.quantity
-                        # want-na 0-kku mela irukanum na: product.stock = max(0, product.stock)
-                        product.save()
-
-                # delete mark panniruka items
+                # delete marked rows
                 for obj in formset.deleted_objects:
                     obj.delete()
 
+                # 🔥 recompute & update status
+                invoice.recompute_total()
+                invoice.update_status_from_payments()
+
             return redirect("invoice_list")
+
     else:
         form = InvoiceForm()
         formset = InvoiceItemFormSet()
@@ -63,8 +64,6 @@ def invoice_create(request):
             "title": "Create Invoice",
         },
     )
-
-
 
 from decimal import Decimal
 from django.db.models import Sum, Value, DecimalField
@@ -238,6 +237,13 @@ def invoice_list(request):
         }
     )
 
+# invoices/views.py
+
+from django.shortcuts import render, redirect, get_object_or_404
+from .models import Invoice, InvoiceItem
+from .forms import InvoiceForm, InvoiceItemFormSet
+from products.models import Product
+
 def invoice_edit(request, pk):
     invoice = get_object_or_404(Invoice, pk=pk)
 
@@ -246,31 +252,15 @@ def invoice_edit(request, pk):
         formset = InvoiceItemFormSet(request.POST, instance=invoice)
 
         if form.is_valid() and formset.is_valid():
-            invoice = form.save(commit=False)
+            with transaction.atomic():
+                form.save()
+                formset.save()
 
-            items = formset.save(commit=False)
-            subtotal = Decimal("0.00")
-
-            for item in items:
-                item.invoice = invoice
-                if not item.unit_price:
-                    item.unit_price = item.product.price
-                item.save()
-                subtotal += item.quantity * item.unit_price
-
-            # remove deleted items
-            for obj in formset.deleted_objects:
-                obj.delete()
-
-            tax_percent = invoice.tax_percent or 0
-            discount_amount = invoice.discount_amount or Decimal("0.00")
-
-            tax_amount = subtotal * Decimal(tax_percent) / Decimal("100")
-            invoice.total_amount = subtotal + tax_amount - discount_amount
-            invoice.save()
+                # 🔥 THIS IS THE FIX
+                invoice.recompute_total()
+                invoice.update_status_from_payments()
 
             return redirect("invoice_list")
-
     else:
         form = InvoiceForm(instance=invoice)
         formset = InvoiceItemFormSet(instance=invoice)
@@ -287,3 +277,25 @@ def invoice_edit(request, pk):
             "title": "Edit Invoice",
         },
     )
+
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+from xhtml2pdf import pisa
+
+def invoice_pdf(request, pk):
+    invoice = get_object_or_404(Invoice, pk=pk)
+    items = invoice.items.all()
+
+    html = render_to_string(
+        "invoices/invoice_pdf.html",
+        {
+            "invoice": invoice,
+            "items": items,
+        }
+    )
+
+    response = HttpResponse(content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="invoice_{invoice.id}.pdf"'
+
+    pisa.CreatePDF(html, dest=response)
+    return response

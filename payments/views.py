@@ -34,19 +34,13 @@ from django.shortcuts import render, redirect, get_object_or_404
 from .models import Payment
 from invoices.models import Invoice
 
-def update_invoice_status(invoice: Invoice):
-    """
-    Payment ellam based pannitu invoice.status set pannum:
-    - unpaid : payments illa
-    - partial: some payments, but less than total
-    - paid   : payments >= total
-    """
+def update_invoice_status(invoice):
+    # 🔥 invoice None-na simply exit
+    if invoice is None:
+        return
 
-    # FULL amount customer pay pannanum (tax + discount ah include pannra field / property)
-    # Ungal Invoice model la total_amount property/field use panrom:
-    total_amount = Decimal(invoice.total_amount)
+    total_amount = invoice.grand_total
 
-    # Total paid so far (status='paid' payments matrum count)
     total_paid = (
         Payment.objects
         .filter(invoice=invoice, status="paid")
@@ -54,7 +48,6 @@ def update_invoice_status(invoice: Invoice):
         .get("total") or Decimal("0")
     )
 
-    # Decide status
     if total_paid <= 0:
         invoice.status = "unpaid"
     elif total_paid < total_amount:
@@ -63,6 +56,7 @@ def update_invoice_status(invoice: Invoice):
         invoice.status = "paid"
 
     invoice.save(update_fields=["status"])
+
 
 def _parse_date(value):
     """
@@ -75,13 +69,15 @@ def _parse_date(value):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return None
-
+    
+    
 from datetime import date
 from decimal import Decimal
 
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
 from django.db.models import Sum, DecimalField
 from django.db.models.functions import Coalesce
-from django.shortcuts import render
 
 from customers.models import Customer
 from products.models import Product
@@ -89,16 +85,17 @@ from invoices.models import Invoice
 from payments.models import Payment
 
 
+@login_required   # 🔥 THIS IS THE KEY LINE
 def dashboard(request):
     today = date.today()
 
-    # Basic counts
+    # ----- BASIC COUNTS -----
     total_customers = Customer.objects.count()
     total_products = Product.objects.count()
     total_invoices = Invoice.objects.count()
     total_payments_count = Payment.objects.count()
 
-    # ----- SALES TOTALS (using grand_total property) -----
+    # ----- SALES TOTALS -----
     all_invoices = Invoice.objects.all()
 
     total_sales = Decimal("0.00")
@@ -106,6 +103,7 @@ def dashboard(request):
     month_sales = Decimal("0.00")
 
     for inv in all_invoices:
+        # support both grand_total property & old total_amount
         grand = getattr(inv, "grand_total", inv.total_amount or Decimal("0.00"))
 
         total_sales += grand
@@ -116,11 +114,11 @@ def dashboard(request):
         if inv.date.year == today.year and inv.date.month == today.month:
             month_sales += grand
 
-    # ----- PAYMENTS TOTAL (actual money received) -----
+    # ----- PAYMENTS TOTAL (actual received) -----
     total_payments = Payment.objects.filter(status="paid").aggregate(
         total=Coalesce(
             Sum("amount"),
-            0,
+            Decimal("0.00"),
             output_field=DecimalField(max_digits=10, decimal_places=2),
         )
     )["total"]
@@ -136,36 +134,22 @@ def dashboard(request):
         "month_sales": month_sales,
         "total_payments": total_payments,
     }
+
     return render(request, "dashboard.html", context)
 
-
-
-
 def payment_list(request):
-    payments = Payment.objects.select_related("invoice", "invoice__customer").order_by(
-        "-date", "-id"
+    payments = (
+        Payment.objects
+        .filter(invoice__isnull=False)   # 🔥 IMPORTANT FIX
+        .select_related("invoice", "invoice__customer")
+        .order_by("-date", "-id")
     )
-    return render(request, "payments/payment_list.html", {"payments": payments})
 
-
-
-def payment_create(request):
-    if request.method == "POST":
-        form = PaymentForm(request.POST)
-        if form.is_valid():
-            payment = form.save(commit=False)
-            # auto status
-            payment.status = "paid"
-            payment.save()
-
-            # optional: update invoice status after payment
-            payment.invoice.update_status_from_payments()
-
-            return redirect("payment_list")
-    else:
-        form = PaymentForm()
-
-    return render(request, "payments/payment_form.html", {"form": form, "title": "Add Payment"})
+    return render(
+        request,
+        "payments/payment_list.html",
+        {"payments": payments}
+    )
 
 
 def payment_edit(request, pk):
@@ -186,21 +170,28 @@ def payment_edit(request, pk):
 
     return render(request, "payments/payment_form.html", {"form": form, "title": "Edit Payment"})
 
-
-
 def payment_delete(request, pk):
     payment = get_object_or_404(Payment, pk=pk)
-    invoice = payment.invoice  # keep reference
+
+    # 🔥 invoice reference save pannrom
+    invoice = payment.invoice
 
     if request.method == "POST":
         payment.delete()
-        update_invoice_status(invoice)
+
+        # 🔥 invoice irundha mattum status update
+        if invoice is not None:
+            update_invoice_status(invoice)
+
         return redirect("payment_list")
 
-    return render(request, "payments/payment_confirm_delete.html", {
-        "payment": payment,
-    })
-
+    return render(
+        request,
+        "payments/payment_confirm_delete.html",
+        {
+            "payment": payment,
+        }
+    )
 
 # payments/views.py
 from django.shortcuts import render, redirect, get_object_or_404
@@ -215,26 +206,48 @@ def payment_create(request):
         form = PaymentForm(request.POST)
         if form.is_valid():
             payment = form.save(commit=False)
-            # auto mark as paid
             payment.status = "paid"
             payment.save()
 
-            # invoice status update (using method on Invoice model)
-            payment.invoice.update_status_from_payments()
+            remaining = payment.amount
 
-            return redirect("payment_list")   # <-- unga list URL name
+            invoices = (
+                Invoice.objects
+                .filter(customer=payment.customer)
+                .order_by("date", "id")
+            )
+
+            for inv in invoices:
+                if remaining <= 0:
+                    break
+
+                balance = inv.balance
+                if balance <= 0:
+                    continue
+
+                allocate = min(balance, remaining)
+
+                Payment.objects.create(
+                    customer=payment.customer,
+                    invoice=inv,
+                    date=payment.date,
+                    amount=allocate,
+                    method=payment.method,
+                    status="paid",
+                )
+
+                inv.update_status_from_payments()
+                remaining -= allocate
+
+            return redirect("payment_list")
     else:
-        form = PaymentForm(
-            initial={"date": timezone.now().date()}
-        )
+        form = PaymentForm()
 
     return render(
         request,
         "payments/payment_form.html",
         {"form": form, "title": "Add Payment"},
     )
-
-
 
 def product_report(request):
     date_from_str = request.GET.get("date_from")
@@ -250,9 +263,9 @@ def product_report(request):
         items_qs = InvoiceItem.objects.filter(product=prod).select_related("invoice")
 
         if date_from:
-            items_qs = items_qs.filter(invoice_date_gte=date_from)
+            items_qs = items_qs.filter(invoice__date__gte=date_from)
         if date_to:
-            items_qs = items_qs.filter(invoice_date_lte=date_to)
+            items_qs = items_qs.filter(invoice__date__lte=date_to)
 
         invoice_ids = items_qs.values_list("invoice_id", flat=True).distinct()
         total_invoices = invoice_ids.count()
@@ -296,90 +309,44 @@ def product_report(request):
     }
     return render(request, "payments/product_report.html", context)
 
-
 def product_report_csv(request):
-    date_from_str = request.GET.get("date_from") or ""
-    date_to_str = request.GET.get("date_to") or ""
-
-    # "None" -> empty
-    if date_from_str == "None":
-        date_from_str = ""
-    if date_to_str == "None":
-        date_to_str = ""
-
-    date_from = _parse_date(date_from_str)
-    date_to = _parse_date(date_to_str)
-
-    # Build same rows as product_report view
     products = Product.objects.all().order_by("name")
-    rows = []
 
-    line_total = ExpressionWrapper(
-        F("quantity") * F("unit_price"),
-        output_field=DecimalField(max_digits=10, decimal_places=2),
-    )
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="product_report.csv"'
+    writer = csv.writer(response)
 
-    for prod in products:
-        items_qs = InvoiceItem.objects.filter(product=prod).select_related("invoice")
+    writer.writerow([
+        "Product",
+        "Invoices Count",
+        "Invoice Amount (₹)",
+        "Payments Received (₹)",
+    ])
 
-        if date_from:
-            items_qs = items_qs.filter(invoice_date_gte=date_from)
-        if date_to:
-            items_qs = items_qs.filter(invoice_date_lte=date_to)
+    for p in products:
+        items = InvoiceItem.objects.filter(product=p)
 
-        invoice_ids = items_qs.values_list("invoice_id", flat=True).distinct()
-        total_invoices = invoice_ids.count()
+        invoice_ids = items.values_list("invoice_id", flat=True).distinct()
 
-        total_invoice_amount = items_qs.aggregate(
-            total=Coalesce(
-                Sum(line_total),
-                0,
-                output_field=DecimalField(max_digits=10, decimal_places=2),
-            )
-        )["total"]
+        total_amount = sum(
+            (i.invoice.grand_total for i in items if i.invoice),
+            Decimal("0")
+        )
 
         total_paid = Payment.objects.filter(
             invoice_id__in=invoice_ids,
-            status="paid",
-        ).aggregate(
-            total=Coalesce(
-                Sum("amount"),
-                0,
-                output_field=DecimalField(max_digits=10, decimal_places=2),
-            )
-        )["total"]
+            status="paid"
+        ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
-        rows.append({
-            "product": prod,
-            "total_invoices": total_invoices,
-            "total_invoice_amount": total_invoice_amount,
-            "total_paid": total_paid,
-        })
-
-    # Create CSV
-    response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = 'attachment; filename="product_report.csv"'
-
-    writer = csv.writer(response)
-    writer.writerow([
-        "Product",
-        "SKU",
-        "Total Invoices",
-        "Total Invoice Amount",
-        "Total Payments",
-    ])
-
-    for row in rows:
-        prod = row["product"]
         writer.writerow([
-            prod.name,
-            getattr(prod, "sku", ""),
-            row["total_invoices"],
-            row["total_invoice_amount"],
-            row["total_paid"],
+            p.name,
+            invoice_ids.count(),
+            f"{total_amount:.2f}",
+            f"{total_paid:.2f}",
         ])
 
     return response
+
 
 from decimal import Decimal
 from django.db.models import Sum, Q, F, DecimalField, ExpressionWrapper
@@ -447,40 +414,20 @@ def invoice_report(request):
 
 
 def invoice_report_csv(request):
-    date_from_str = request.GET.get("date_from") or ""
-    date_to_str = request.GET.get("date_to") or ""
+    date_from = request.GET.get("date_from") or ""
+    date_to = request.GET.get("date_to") or ""
 
-    if date_from_str == "None":
-        date_from_str = ""
-    if date_to_str == "None":
-        date_to_str = ""
-
-    date_from = date_from_str or None
-    date_to = date_to_str or None
-
-    invoices = Invoice.objects.select_related("customer")
+    invoices = (
+        Invoice.objects
+        .select_related("customer")
+        .prefetch_related("payments")
+        .order_by("date", "id")
+    )
 
     if date_from:
         invoices = invoices.filter(date__gte=date_from)
     if date_to:
         invoices = invoices.filter(date__lte=date_to)
-
-    # 🔹 annotation names: total_paid + remaining_balance (NO clash)
-    invoices = invoices.annotate(
-        total_paid=Coalesce(
-            Sum(
-                "payments__amount",
-                filter=Q(payments__status="paid"),
-            ),
-            0,
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        )
-    ).annotate(
-        remaining_balance=ExpressionWrapper(
-            F("total_amount") - F("total_paid"),
-            output_field=DecimalField(max_digits=10, decimal_places=2),
-        )
-    )
 
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="invoice_report.csv"'
@@ -490,24 +437,25 @@ def invoice_report_csv(request):
         "Invoice ID",
         "Date",
         "Customer",
-        "Total Amount",
-        "Total Paid",
-        "Balance",
+        "Invoice Total (₹)",
+        "Paid Amount (₹)",
+        "Balance (₹)",
         "Status",
     ])
 
-    for inv in invoices.order_by("-date", "-id"):
+    for inv in invoices:
         writer.writerow([
             inv.id,
             inv.date.strftime("%d-%m-%Y") if inv.date else "",
             inv.customer.name if inv.customer else "",
-            inv.total_amount,
-            inv.total_paid,            # annotation
-            inv.remaining_balance,     # annotation (no property clash)
+            f"{inv.grand_total:.2f}",
+            f"{inv.amount_paid:.2f}",
+            f"{inv.balance:.2f}",
             inv.get_status_display(),
         ])
 
     return response
+
 
 def _get_outstanding_rows():
     """
@@ -541,8 +489,8 @@ def _get_outstanding_rows():
 
     return rows
 
-from django.shortcuts import render
 
+from django.shortcuts import render
 
 def outstanding_report(request):
     rows = _get_outstanding_rows()
@@ -552,7 +500,6 @@ def outstanding_report(request):
     }
     return render(request, "payments/outstanding_report.html", context)
 
-
 def outstanding_report_csv(request):
     rows = _get_outstanding_rows()
 
@@ -560,76 +507,72 @@ def outstanding_report_csv(request):
     response["Content-Disposition"] = 'attachment; filename="outstanding_report.csv"'
 
     writer = csv.writer(response)
-    # header
     writer.writerow([
-        "S.No",
-        "Invoice #",
+        "Invoice ID",
         "Date",
         "Customer",
-        "Total Amount",
-        "Paid",
-        "Outstanding",
+        "Invoice Total (₹)",
+        "Paid (₹)",
+        "Outstanding (₹)",
         "Status",
     ])
 
-    for idx, row in enumerate(rows, start=1):
-        inv = row["invoice"]
+    for r in rows:
+        inv = r["invoice"]
         writer.writerow([
-            idx,
             inv.id,
             inv.date.strftime("%d-%m-%Y"),
             inv.customer.name,
-            f"{row['total']:.2f}",
-            f"{row['paid']:.2f}",
-            f"{row['balance']:.2f}",
+            f"{r['total']:.2f}",
+            f"{r['paid']:.2f}",
+            f"{r['balance']:.2f}",
             inv.get_status_display(),
         ])
 
     return response
 
+from django.db.models import Sum
+from .models import Payment
 
 def payment_report(request):
-    """
-    Payments report - list + date filter + total amount.
-    """
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
 
-    payments = Payment.objects.select_related("invoice", "invoice__customer")
+    payments = (
+        Payment.objects
+        .filter(invoice__isnull=False)
+        .select_related("invoice__customer")
+        .order_by("-date", "-id")
+    )
 
-    if date_from:
+    if date_from and date_from != "None":
         payments = payments.filter(date__gte=date_from)
-    if date_to:
+    if date_to and date_to != "None":
         payments = payments.filter(date__lte=date_to)
 
-    total_amount = payments.aggregate(total=Sum("amount"))["total"] or 0
+    total_amount = payments.aggregate(
+        total=Sum("amount")
+    )["total"] or Decimal("0")
 
-    context = {
-        "payments": payments.order_by("-date", "-id"),
-        "total_amount": total_amount,
-        "date_from": date_from,
-        "date_to": date_to,
-    }
-    return render(request, "payments/payment_report.html", context)
+    return render(
+        request,
+        "payments/payment_report.html",
+        {
+            "payments": payments,
+            "total_amount": total_amount,
+            "date_from": date_from,
+            "date_to": date_to,
+        }
+    )
 
 
 def payment_report_csv(request):
-    # Get raw strings (can be "None", "", or real date)
-    date_from_str = request.GET.get("date_from") or ""
-    date_to_str = request.GET.get("date_to") or ""
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
 
-    # Treat "None" as empty
-    if date_from_str == "None":
-        date_from_str = ""
-    if date_to_str == "None":
-        date_to_str = ""
-
-    # If u already have _parse_date helper, use it
-    # otherwise just use raw string (YYYY-MM-DD) – DB accepts it
-    date_from = date_from_str or None
-    date_to = date_to_str or None
-
-    payments = Payment.objects.select_related("invoice__customer")
+    payments = Payment.objects.filter(
+        invoice__isnull=False
+    ).select_related("invoice__customer")
 
     if date_from:
         payments = payments.filter(date__gte=date_from)
@@ -637,19 +580,24 @@ def payment_report_csv(request):
         payments = payments.filter(date__lte=date_to)
 
     response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = 'attachment; filename="payments_report.csv"'
-
+    response["Content-Disposition"] = 'attachment; filename="payment_report.csv"'
     writer = csv.writer(response)
-    writer.writerow(["Date", "Invoice ID", "Customer", "Method", "Status", "Amount"])
+
+    writer.writerow([
+        "Date",
+        "Invoice ID",
+        "Customer",
+        "Method",
+        "Amount (₹)",
+    ])
 
     for p in payments.order_by("date", "id"):
         writer.writerow([
-            p.date.strftime("%d-%m-%Y") if p.date else "",
-            p.invoice_id,
-            p.invoice.customer.name if p.invoice and p.invoice.customer else "",
+            p.date.strftime("%d-%m-%Y"),
+            p.invoice.id,
+            p.invoice.customer.name,
             p.get_method_display(),
-            p.get_status_display(),
-            p.amount,
+            f"{p.amount:.2f}",
         ])
 
     return response
@@ -714,63 +662,45 @@ def customer_report(request):
 
 
 def customer_report_csv(request):
-    date_from_str = request.GET.get("date_from") or ""
-    date_to_str = request.GET.get("date_to") or ""
-
-    date_from = _parse_date(date_from_str)
-    date_to = _parse_date(date_to_str)
+    date_from = request.GET.get("date_from")
+    date_to = request.GET.get("date_to")
 
     customers = Customer.objects.all().order_by("name")
 
-    rows = []
-
-    for c in customers:
-        inv_qs = Invoice.objects.filter(customer=c)
-        if date_from:
-            inv_qs = inv_qs.filter(date__gte=date_from)
-        if date_to:
-            inv_qs = inv_qs.filter(date__lte=date_to)
-
-        inv_agg = inv_qs.aggregate(
-            total_invoices=Count("id"),
-            total_amount=Sum("total_amount"),
-        )
-
-        pay_qs = Payment.objects.filter(invoice__customer=c)
-        if date_from:
-            pay_qs = pay_qs.filter(invoice_date_gte=date_from)
-        if date_to:
-            pay_qs = pay_qs.filter(invoice_date_lte=date_to)
-
-        total_payments = pay_qs.aggregate(total=Sum("amount"))["total"] or 0
-
-        rows.append({
-            "customer": c,
-            "total_invoices": inv_agg["total_invoices"] or 0,
-            "total_invoice_amount": inv_agg["total_amount"] or 0,
-            "total_payments": total_payments,
-        })
-
     response = HttpResponse(content_type="text/csv")
-    response["Content-Disposition"] = "attachment; filename=customer_report.csv"
+    response["Content-Disposition"] = 'attachment; filename="customer_report.csv"'
     writer = csv.writer(response)
 
     writer.writerow([
-        "Customer Name",
+        "Customer",
         "Total Invoices",
-        "Total Invoice Amount",
-        "Total Payments",
+        "Total Billed (₹)",
+        "Total Paid (₹)",
+        "Outstanding (₹)",
     ])
 
-    for r in rows:
+    for c in customers:
+        invoices = Invoice.objects.filter(customer=c)
+
+        if date_from:
+            invoices = invoices.filter(date__gte=date_from)
+        if date_to:
+            invoices = invoices.filter(date__lte=date_to)
+
+        total_billed = sum((i.grand_total for i in invoices), Decimal("0"))
+        total_paid = sum((i.amount_paid for i in invoices), Decimal("0"))
+        outstanding = total_billed - total_paid
+
         writer.writerow([
-            r["customer"].name,
-            r["total_invoices"],
-            r["total_invoice_amount"],
-            r["total_payments"],
+            c.name,
+            invoices.count(),
+            f"{total_billed:.2f}",
+            f"{total_paid:.2f}",
+            f"{outstanding:.2f}",
         ])
 
     return response
+
 
 from datetime import date
 from decimal import Decimal
@@ -834,13 +764,7 @@ def monthly_report(request):
 
 def monthly_report_csv(request):
     year = request.GET.get("year")
-    if not year:
-        year = date.today().year
-    else:
-        try:
-            year = int(year)
-        except ValueError:
-            year = date.today().year
+    year = int(year) if year and year.isdigit() else date.today().year
 
     monthly_data = _build_monthly_data(year)
 
@@ -848,20 +772,17 @@ def monthly_report_csv(request):
     response["Content-Disposition"] = f'attachment; filename="monthly_report_{year}.csv"'
 
     writer = csv.writer(response)
-    writer.writerow(["S.No", "Month", "Total Invoices", "Total Amount (₹)"])
+    writer.writerow(["S.No", "Month", "Invoices", "Total Amount (₹)"])
 
     for idx, row in enumerate(monthly_data, start=1):
-        month_str = row["month"].strftime("%b %Y")
         writer.writerow([
             idx,
-            month_str,
+            row["month"].strftime("%b %Y"),
             row["total_invoices"],
-            row["total_amount"],  # already Decimal, CSV la value ah pogum
+            f"{row['total_amount']:.2f}",
         ])
 
     return response
-
-
 
 from decimal import Decimal
 from django.db.models import Sum
@@ -938,44 +859,49 @@ from decimal import Decimal
 
 
 def customer_summary_csv(request):
-    customer_id = request.GET.get("customer") or ""
+    customer_id = request.GET.get("customer")
 
-    if not customer_id:
-        # no customer selected – simple error CSV
-        response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="customer_summary.csv"'
-        writer = csv.writer(response)
-        writer.writerow(["Error"])
-        writer.writerow(["No customer selected"])
-        return response
-
-    try:
-        customer = Customer.objects.get(id=customer_id)
-    except Customer.DoesNotExist:
-        response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="customer_summary.csv"'
-        writer = csv.writer(response)
-        writer.writerow(["Error"])
-        writer.writerow(["Customer not found"])
-        return response
+    customer = get_object_or_404(Customer, id=customer_id)
 
     invoices = (
         Invoice.objects
         .filter(customer=customer)
-        .prefetch_related("items")
         .order_by("date", "id")
     )
 
-    # CSV response
+    payments = (
+        Payment.objects
+        .filter(invoice__customer=customer, status="paid")
+        .select_related("invoice")
+        .order_by("date", "id")
+    )
+
+    # ---- SUMMARY TOTALS ----
+    total_invoices = invoices.count()
+    total_billed = sum((inv.grand_total for inv in invoices), Decimal("0"))
+    total_paid = sum((inv.amount_paid for inv in invoices), Decimal("0"))
+    total_outstanding = total_billed - total_paid
+
     response = HttpResponse(content_type="text/csv")
-    filename = f"customer_summary_{customer.id}.csv"
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Disposition"] = (
+        f'attachment; filename="customer_summary_{customer.id}.csv"'
+    )
 
     writer = csv.writer(response)
 
-    # header
+    # ---- HEADER ----
     writer.writerow([f"Customer Summary - {customer.name}"])
     writer.writerow([])
+
+    # ---- SUMMARY SECTION ----
+    writer.writerow(["Total Invoices", total_invoices])
+    writer.writerow(["Total Billed (₹)", f"{total_billed:.2f}"])
+    writer.writerow(["Total Paid (₹)", f"{total_paid:.2f}"])
+    writer.writerow(["Outstanding (₹)", f"{total_outstanding:.2f}"])
+    writer.writerow([])
+
+    # ---- INVOICES SECTION ----
+    writer.writerow(["Invoices"])
     writer.writerow([
         "S.No",
         "Invoice ID",
@@ -997,14 +923,25 @@ def customer_summary_csv(request):
             inv.get_status_display(),
         ])
 
-    # Small overall summary at bottom
-    total_billed = sum((inv.grand_total for inv in invoices), Decimal("0"))
-    total_outstanding = sum((inv.balance for inv in invoices), Decimal("0"))
-    # total paid = billed - outstanding (or you can use sum of payments)
-    total_paid = total_billed - total_outstanding
-
     writer.writerow([])
-    writer.writerow(["Totals", "", "", f"{total_billed:.2f}",
-                     f"{total_paid:.2f}", f"{total_outstanding:.2f}", ""])
+
+    # ---- PAYMENTS SECTION ----
+    writer.writerow(["Payments"])
+    writer.writerow([
+        "S.No",
+        "Date",
+        "Invoice ID",
+        "Amount (₹)",
+        "Method",
+    ])
+
+    for idx, p in enumerate(payments, start=1):
+        writer.writerow([
+            idx,
+            p.date.strftime("%d-%m-%Y"),
+            p.invoice.id if p.invoice else "",
+            f"{p.amount:.2f}",
+            p.get_method_display(),
+        ])
 
     return response
