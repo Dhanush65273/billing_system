@@ -5,7 +5,8 @@ from . import views
 from .views import dashboard
 
 urlpatterns = [
-    path("dashboard/", dashboard, name="dashboard"),
+    path("dashboard/", views.dashboard, name="dashboard"),
+
     # ---------- Payments CRUD ----------
     path("", views.payment_list, name="payment_list"),
     path("add/", views.payment_create, name="payment_create"),

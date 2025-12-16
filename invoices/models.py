@@ -154,6 +154,11 @@ class Invoice(models.Model):
 
 
 class InvoiceItem(models.Model):
+    DISCOUNT_TYPE_CHOICES = [
+        ("percent", "Percentage"),
+        ("amount", "Amount"),
+    ]
+
     invoice = models.ForeignKey(
         Invoice, on_delete=models.CASCADE, related_name="items"
     )
@@ -161,9 +166,37 @@ class InvoiceItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
 
+    # 🆕 Item-wise tax & discount
+    tax_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0
+    )
+    discount_type = models.CharField(
+        max_length=10, choices=DISCOUNT_TYPE_CHOICES, default="amount"
+    )
+    discount_value = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+
     def __str__(self):
         return f"{self.product.name} x {self.quantity}"
 
     @property
-    def line_total(self) -> Decimal:
+    def line_subtotal(self):
         return self.quantity * self.unit_price
+
+    @property
+    def discount_amount(self):
+        if self.discount_type == "percent":
+            return self.line_subtotal * self.discount_value / Decimal("100")
+        return self.discount_value
+
+    @property
+    def tax_amount(self):
+        taxable = self.line_subtotal - self.discount_amount
+        if taxable < 0:
+            taxable = Decimal("0")
+        return taxable * self.tax_percent / Decimal("100")
+
+    @property
+    def line_total(self):
+        return self.line_subtotal - self.discount_amount + self.tax_amount
