@@ -1,4 +1,4 @@
-console.log("FINAL invoice JS – PRICE + TOTAL FIXED");
+console.log("FINAL invoice JS – PRICE + TOTAL + FORMSET FIXED");
 
 function num(v) {
     const n = parseFloat(v);
@@ -56,7 +56,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const body = document.getElementById("formset-body");
     const addBtn = document.getElementById("add-row-btn");
     const tpl = document.getElementById("empty-row");
-    const totalForms = document.querySelector('input[name$="-TOTAL_FORMS"]');
+
+    // ✅ EXACT TOTAL_FORMS (THIS IS THE FIX)
+    const totalForms = document.getElementById("id_items-TOTAL_FORMS");
 
     // 🔥 existing rows
     body.querySelectorAll("tr.item-row").forEach(row => {
@@ -66,7 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
     addBtn.addEventListener("click", e => {
         e.preventDefault();
 
-        const index = parseInt(totalForms.value, 10);
+        let index = parseInt(totalForms.value, 10);
 
         let html = tpl.innerHTML
             .replace(/__prefix__/g, index)
@@ -77,6 +79,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const row = temp.firstElementChild;
 
         body.appendChild(row);
+
+        // 🔥 MOST IMPORTANT LINE
         totalForms.value = index + 1;
 
         attachProductPrice(row);

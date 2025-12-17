@@ -15,6 +15,7 @@ input[type="checkbox"][name$="-DELETE"] {
 <form method="post">
     {% csrf_token %}
 
+    <!-- ================= INVOICE HEADER ================= -->
     <div class="row mb-3">
         <div class="col-md-4">
             <label>Customer</label>
@@ -32,11 +33,10 @@ input[type="checkbox"][name$="-DELETE"] {
 
     <h4>Items</h4>
 
-    <form method="post">
-    {% csrf_token %}
-    
+    <!-- 🔥 FORMSET MANAGEMENT (MUST) -->
     {{ items.management_form }}
 
+    <!-- ================= ITEMS TABLE ================= -->
     <table class="table table-bordered">
         <thead>
             <tr>
@@ -55,14 +55,17 @@ input[type="checkbox"][name$="-DELETE"] {
         {% for f in items.forms %}
             <tr class="item-row">
                 {{ f.id }}
+
                 <td class="row-number">{{ forloop.counter }}</td>
 
                 <td>
-                    <select name="{{ f.product.html_name }}" class="form-select product-select">
+                    <select name="{{ f.product.html_name }}"
+                            class="form-select product-select">
                         <option value="">---------</option>
                         {% for p in products %}
-                        <option value="{{ p.id }}" data-price="{{ p.price }}"
-                            {% if f.instance.product_id == p.id %}selected{% endif %}>
+                        <option value="{{ p.id }}"
+                                data-price="{{ p.price }}"
+                                {% if f.instance.product_id == p.id %}selected{% endif %}>
                             {{ p.name }}
                         </option>
                         {% endfor %}
@@ -70,28 +73,38 @@ input[type="checkbox"][name$="-DELETE"] {
                 </td>
 
                 <td>
-                    <input type="number" name="{{ f.quantity.html_name }}" class="form-control" value="1">
+                    <input type="number"
+                           name="{{ f.quantity.html_name }}"
+                           class="form-control"
+                           value="{{ f.quantity.value|default:1 }}">
                 </td>
 
                 <td>
-                    <input type="number" name="{{ f.unit_price.html_name }}"
-                           class="form-control unit-price-input" value="0">
+                    <input type="number"
+                           name="{{ f.unit_price.html_name }}"
+                           class="form-control unit-price-input"
+                           value="{{ f.unit_price.value|default:0 }}">
                 </td>
 
                 <td>
-                    <input type="number" name="{{ f.tax_percent.html_name }}"
-                           class="form-control item-tax-percent" value="0">
+                    <input type="number"
+                           name="{{ f.tax_percent.html_name }}"
+                           class="form-control"
+                           value="{{ f.tax_percent.value|default:0 }}">
                 </td>
 
                 <td>
                     <div class="d-flex gap-1">
                         <select name="{{ f.discount_type.html_name }}"
-                                class="form-select item-discount-type" style="width:70px;">
+                                class="form-select"
+                                style="width:70px;">
                             <option value="amount">₹</option>
                             <option value="percent">%</option>
                         </select>
-                        <input type="number" name="{{ f.discount_value.html_name }}"
-                               class="form-control item-discount-value" value="0">
+                        <input type="number"
+                               name="{{ f.discount_value.html_name }}"
+                               class="form-control"
+                               value="{{ f.discount_value.value|default:0 }}">
                     </div>
                 </td>
 
@@ -101,7 +114,8 @@ input[type="checkbox"][name$="-DELETE"] {
 
                 <td class="text-center">
                     {{ f.DELETE }}
-                    <button type="button" class="btn btn-danger btn-sm delete-row-btn">✕</button>
+                    <button type="button"
+                            class="btn btn-danger btn-sm delete-row-btn">✕</button>
                 </td>
             </tr>
         {% endfor %}
@@ -110,52 +124,91 @@ input[type="checkbox"][name$="-DELETE"] {
         <tfoot>
             <tr>
                 <th colspan="6" class="text-end">Grand Total</th>
-                <th><input id="grand-total" class="form-control" readonly></th>
+                <th>
+                    <input id="grand-total" class="form-control" readonly>
+                </th>
                 <th></th>
             </tr>
         </tfoot>
     </table>
 
-    <button type="button" id="add-row-btn" class="btn btn-outline-success">+ Add Item</button>
+    <button type="button"
+            id="add-row-btn"
+            class="btn btn-outline-success">
+        + Add Item
+    </button>
+
     <br><br>
-    <button type="submit" class="btn btn-success">Create Invoice</button>
-    <a href="{% url 'invoice_list' %}" class="btn btn-secondary">Cancel</a>
+
+    <button type="submit" class="btn btn-success">
+        Create Invoice
+    </button>
+    <a href="{% url 'invoice_list' %}" class="btn btn-secondary">
+        Cancel
+    </a>
 </form>
 
-<!-- 🔥 EMPTY ROW TEMPLATE (VERY IMPORTANT) -->
+<!-- ================= EMPTY ROW TEMPLATE ================= -->
 <script type="text/template" id="empty-row">
 <tr class="item-row">
     <td class="row-number">__num__</td>
 
     <td>
-        <select name="invoiceitem_set-__prefix__-product"
+        <select name="items-__prefix__-product"
                 class="form-select product-select">
             <option value="">---------</option>
             {% for p in products %}
-            <option value="{{ p.id }}" data-price="{{ p.price }}">{{ p.name }}</option>
+            <option value="{{ p.id }}" data-price="{{ p.price }}">
+                {{ p.name }}
+            </option>
             {% endfor %}
         </select>
     </td>
 
-    <td><input type="number" name="invoiceitem_set-__prefix__-quantity" class="form-control" value="1"></td>
-    <td><input type="number" name="invoiceitem_set-__prefix__-unit_price" class="form-control unit-price-input" value="0"></td>
-    <td><input type="number" name="invoiceitem_set-__prefix__-tax_percent" class="form-control" value="0"></td>
+    <td>
+        <input type="number"
+               name="items-__prefix__-quantity"
+               class="form-control"
+               value="1">
+    </td>
+
+    <td>
+        <input type="number"
+               name="items-__prefix__-unit_price"
+               class="form-control unit-price-input"
+               value="0">
+    </td>
+
+    <td>
+        <input type="number"
+               name="items-__prefix__-tax_percent"
+               class="form-control"
+               value="0">
+    </td>
 
     <td>
         <div class="d-flex gap-1">
-            <select name="invoiceitem_set-__prefix__-discount_type" class="form-select" style="width:70px;">
+            <select name="items-__prefix__-discount_type"
+                    class="form-select"
+                    style="width:70px;">
                 <option value="amount">₹</option>
                 <option value="percent">%</option>
             </select>
-            <input type="number" name="invoiceitem_set-__prefix__-discount_value" class="form-control" value="0">
+            <input type="number"
+                   name="items-__prefix__-discount_value"
+                   class="form-control"
+                   value="0">
         </div>
     </td>
 
-    <td><input class="form-control item-total" readonly></td>
+    <td>
+        <input class="form-control item-total" readonly>
+    </td>
 
     <td class="text-center">
-        <input type="checkbox" name="invoiceitem_set-__prefix__-DELETE">
-        <button type="button" class="btn btn-danger btn-sm delete-row-btn">✕</button>
+        <input type="checkbox" name="items-__prefix__-DELETE">
+        <button type="button"
+                class="btn btn-danger btn-sm delete-row-btn">✕</button>
     </td>
 </tr>
 </script>

@@ -5,11 +5,9 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Invoice #{{ invoice.id }}</h2>
 
-    <!-- 🔥 PDF download button (next step-la URL connect pannalaam) -->
     <a href="{% url 'invoice_pdf' invoice.id %}" class="btn btn-outline-danger">
-   Download PDF
+        Download PDF
     </a>
-
 </div>
 
 <hr>
@@ -53,11 +51,17 @@
             <td>{{ item.unit_price|floatformat:2 }}</td>
             <td>{{ item.line_total|floatformat:2 }}</td>
         </tr>
+        {% empty %}
+        <tr>
+            <td colspan="5" class="text-center text-muted">
+                No items added
+            </td>
+        </tr>
         {% endfor %}
     </tbody>
 </table>
 
-<!-- ================= Totals ================= -->
+<!-- ================= Totals (ITEM-WISE) ================= -->
 <div class="row justify-content-end">
     <div class="col-md-5">
         <table class="table">
@@ -65,24 +69,29 @@
                 <th>Subtotal</th>
                 <td class="text-end">₹ {{ subtotal|floatformat:2 }}</td>
             </tr>
+
             <tr>
-                <th>Discount</th>
-                <td class="text-end">₹ {{ discount|floatformat:2 }}</td>
+                <th>Total Discount</th>
+                <td class="text-end">₹ {{ total_discount|floatformat:2 }}</td>
             </tr>
+
             <tr>
-                <th>Tax ({{ tax_percent }}%)</th>
-                <td class="text-end">₹ {{ tax_amount|floatformat:2 }}</td>
+                <th>Total Tax</th>
+                <td class="text-end">₹ {{ total_tax|floatformat:2 }}</td>
             </tr>
+
             <tr class="table-success">
                 <th>Grand Total</th>
                 <td class="text-end fw-bold">
                     ₹ {{ grand_total|floatformat:2 }}
                 </td>
             </tr>
+
             <tr>
                 <th>Paid</th>
                 <td class="text-end">₹ {{ total_paid|floatformat:2 }}</td>
             </tr>
+
             <tr class="table-warning">
                 <th>Balance</th>
                 <td class="text-end fw-bold">

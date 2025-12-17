@@ -48,7 +48,8 @@
       <td>{{ forloop.counter }}</td>
       <td>{{ inv.date|date:"M d, Y" }}</td>
       <td>{{ inv.customer.name }}</td>
-      <td>{{ inv.grand_total|floatformat:2 }}</td>
+      <td>₹ {{ inv.grand_total|floatformat:2 }}</td>
+
       <td>
         {% if inv.status == 'paid' %}
           <span class="badge bg-success">PAID</span>
