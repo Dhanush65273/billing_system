@@ -149,3 +149,53 @@ class InvoiceItem(models.Model):
     @property
     def line_total(self):
         return self.line_subtotal - self.discount_amount + self.tax_amount
+
+    # ============================
+    # Payment Allocation Helpers
+    # ============================
+
+    def total_paid_amount(self):
+        """
+        Total paid amount for this invoice (paid payments only)
+        """
+        total = self.payments.filter(status="paid").aggregate(
+            total=Sum("amount")
+        )["total"]
+        return total or Decimal("0.00")
+
+    def balance_amount(self):
+        """
+        Remaining balance for this invoice
+        """
+        return self.grand_total - self.total_paid_amount()
+
+    def apply_payment(self, amount):
+        """
+        Apply payment amount to this invoice and update status
+        Returns remaining amount (if any)
+        """
+        if amount <= 0:
+            return amount
+
+        balance = self.balance_amount()
+
+        if balance <= 0:
+            return amount
+
+        applied = min(balance, amount)
+
+        # create payment entry linked to invoice
+        from payments.models import Payment  # local import to avoid circular
+
+        Payment.objects.create(
+            customer=self.customer,
+            invoice=self,
+            amount=applied,
+            status="paid",
+        )
+
+        # update invoice status
+        self.update_status_from_payments()
+
+        return amount - applied
+

@@ -28,7 +28,6 @@
         {{ form.customer }}
     </div>
 
-
     <div class="mb-3">
         <label class="form-label">Date</label>
         {{ form.date }}
@@ -37,6 +36,10 @@
     <div class="mb-3">
         <label class="form-label">Amount</label>
         {{ form.amount }}
+        <div class="form-text">
+            This amount will be automatically adjusted against the customer's
+            pending invoices (oldest first).
+        </div>
     </div>
 
     <div class="mb-3">
@@ -44,7 +47,98 @@
         {{ form.method }}
     </div>
 
+    <!-- 🔥 INFO BOX -->
+    <div class="alert alert-info">
+        <strong>How this payment works:</strong>
+        <ul class="mb-0">
+            <li>Pending invoices for the selected customer will be fetched automatically.</li>
+            <li>Payment amount will be adjusted from the oldest invoice first.</li>
+            <li>If any amount remains, it will be saved as <strong>Advance Payment</strong>.</li>
+        </ul>
+    </div>
+
+    <!-- 🔥 PENDING INVOICES TABLE -->
+    <hr>
+    <h5>Pending Invoices</h5>
+
+    <table class="table table-bordered">
+        <thead class="table-light">
+            <tr>
+                <th>Invoice No</th>
+                <th>Date</th>
+                <th>Total</th>
+                <th>Paid</th>
+                <th>Balance</th>
+            </tr>
+        </thead>
+        <tbody id="pending-invoices-body">
+            <tr>
+                <td colspan="5" class="text-center text-muted">
+                    Select a customer to view pending invoices
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
     <button type="submit" class="btn btn-success">Save Payment</button>
     <a href="{% url 'payment_list' %}" class="btn btn-secondary">Cancel</a>
 </form>
+
+<!-- 🔥 JS: Fetch pending invoices -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const customerSelect = document.getElementById("id_customer");
+    const tableBody = document.getElementById("pending-invoices-body");
+
+    customerSelect.addEventListener("change", function () {
+        const customerId = this.value;
+
+        if (!customerId) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted">
+                        Select a customer to view pending invoices
+                    </td>
+                </tr>`;
+            return;
+        }
+
+        fetch(`/payments/pending-invoices/?customer_id=${customerId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.invoices.length === 0) {
+                    tableBody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center text-success">
+                                No pending invoices 🎉
+                            </td>
+                        </tr>`;
+                    return;
+                }
+
+                tableBody.innerHTML = "";
+                data.invoices.forEach(inv => {
+                    tableBody.innerHTML += `
+                        <tr>
+                            <td>${inv.number}</td>
+                            <td>${inv.date}</td>
+                            <td>₹ ${inv.total}</td>
+                            <td>₹ ${inv.paid}</td>
+                            <td><strong>₹ ${inv.balance}</strong></td>
+                        </tr>`;
+                });
+            })
+            .catch(err => {
+                console.error(err);
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-danger">
+                            Error loading invoices
+                        </td>
+                    </tr>`;
+            });
+    });
+});
+</script>
+
 {% endblock %}

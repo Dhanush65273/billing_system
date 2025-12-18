@@ -200,44 +200,70 @@ from django.utils import timezone
 from .models import Payment
 from .forms import PaymentForm
 
+def auto_allocate_customer_payment(customer, payment_date, method, amount):
+    """
+    Customer payment amount ah oldest unpaid/partial invoices ku FIFO la adjust pannum.
+    Remaining amount irundha advance ah save pannum.
+    """
+    remaining = Decimal(amount)
+
+    invoices = (
+        Invoice.objects
+        .filter(
+            customer=customer,
+            status__in=["unpaid", "partial"]
+        )
+        .order_by("date", "id")
+    )
+
+    for invoice in invoices:
+        if remaining <= 0:
+            break
+
+        balance = invoice.balance
+        if balance <= 0:
+            continue
+
+        allocate = min(balance, remaining)
+
+        Payment.objects.create(
+            customer=customer,
+            invoice=invoice,
+            date=payment_date,
+            amount=allocate,
+            method=method,
+            status="paid",
+        )
+
+        invoice.update_status_from_payments()
+        remaining -= allocate
+
+    # 🔥 advance amount
+    if remaining > 0:
+        Payment.objects.create(
+            customer=customer,
+            invoice=None,
+            date=payment_date,
+            amount=remaining,
+            method=method,
+            status="paid",
+            is_advance=True,
+            notes="Advance payment",
+        )
 
 def payment_create(request):
     if request.method == "POST":
         form = PaymentForm(request.POST)
         if form.is_valid():
-            payment = form.save(commit=False)
-            payment.status = "paid"
-            payment.save()
+            base_payment = form.save(commit=False)
 
-            remaining = payment.amount
-
-            invoices = (
-                Invoice.objects
-                .filter(customer=payment.customer)
-                .order_by("date", "id")
+            # 🔥 DO NOT save base payment directly
+            auto_allocate_customer_payment(
+                customer=base_payment.customer,
+                payment_date=base_payment.date,
+                method=base_payment.method,
+                amount=base_payment.amount,
             )
-
-            for inv in invoices:
-                if remaining <= 0:
-                    break
-
-                balance = inv.balance
-                if balance <= 0:
-                    continue
-
-                allocate = min(balance, remaining)
-
-                Payment.objects.create(
-                    customer=payment.customer,
-                    invoice=inv,
-                    date=payment.date,
-                    amount=allocate,
-                    method=payment.method,
-                    status="paid",
-                )
-
-                inv.update_status_from_payments()
-                remaining -= allocate
 
             return redirect("payment_list")
     else:
@@ -246,7 +272,10 @@ def payment_create(request):
     return render(
         request,
         "payments/payment_form.html",
-        {"form": form, "title": "Add Payment"},
+        {
+            "form": form,
+            "title": "Add Payment",
+        },
     )
 
 def product_report(request):
@@ -945,3 +974,34 @@ def customer_summary_csv(request):
         ])
 
     return response
+
+from django.http import JsonResponse
+from invoices.models import Invoice
+
+def pending_invoices(request):
+    customer_id = request.GET.get("customer_id")
+
+    if not customer_id:
+        return JsonResponse({"invoices": []})
+
+    invoices = (
+        Invoice.objects
+        .filter(
+            customer_id=customer_id,
+            status__in=["unpaid", "partial"]
+        )
+        .order_by("date")
+    )
+
+    data = []
+
+    for inv in invoices:
+        data.append({
+            "number": inv.id,  # or invoice number if you add later
+            "date": inv.date.strftime("%d-%m-%Y"),
+            "total": float(inv.grand_total),      # ✅ property
+            "paid": float(inv.amount_paid),       # ✅ property
+            "balance": float(inv.balance),        # ✅ property
+        })
+
+    return JsonResponse({"invoices": data})

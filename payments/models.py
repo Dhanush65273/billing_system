@@ -1,7 +1,5 @@
-# payments/models.py
-
 from django.db import models
-from customers.models import Customer      # 🔥 ADD
+from customers.models import Customer
 from invoices.models import Invoice
 
 
@@ -20,14 +18,14 @@ class Payment(models.Model):
         ("other", "Other"),
     ]
 
-    # 🔥 NEW: Payment is primarily based on CUSTOMER
+    # 🔥 Payment is CUSTOMER based
     customer = models.ForeignKey(
         Customer,
         on_delete=models.CASCADE,
         related_name="payments"
     )
 
-    # 🔥 KEEP: invoice optional (auto allocation / manual link)
+    # 🔥 Invoice optional (used for auto allocation)
     invoice = models.ForeignKey(
         Invoice,
         on_delete=models.CASCADE,
@@ -39,25 +37,43 @@ class Payment(models.Model):
     date = models.DateField()
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     method = models.CharField(max_length=20, choices=METHOD_CHOICES)
+
     status = models.CharField(
-        max_length=20, choices=STATUS_CHOICES, default="paid"
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="paid"
     )
+
+    # 🔥 Extra / advance amount flag
+    is_advance = models.BooleanField(default=False)
+
     notes = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        if self.invoice:
+        if self.invoice_id:
             return f"Payment #{self.id} - Invoice #{self.invoice_id}"
         return f"Payment #{self.id} - Customer {self.customer.name}"
 
-    # 🔥 IMPORTANT: invoice irundha mattum status update
+    # -----------------------
+    # Helpers
+    # -----------------------
+    def is_linked_to_invoice(self):
+        return self.invoice_id is not None
+
+    # -----------------------
+    # Save / Delete hooks
+    # -----------------------
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        if self.invoice:
+
+        # 🔥 Update invoice status only if linked
+        if self.invoice_id:
             self.invoice.update_status_from_payments()
 
     def delete(self, *args, **kwargs):
-        inv = self.invoice
+        invoice = self.invoice
         super().delete(*args, **kwargs)
-        if inv:
-            inv.update_status_from_payments()
+
+        if invoice:
+            invoice.update_status_from_payments()

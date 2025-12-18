@@ -12,6 +12,11 @@ urlpatterns = [
     path("add/", views.payment_create, name="payment_create"),
     path("edit/<int:pk>/", views.payment_edit, name="payment_edit"),
     path("delete/<int:pk>/", views.payment_delete, name="payment_delete"),
+    path(
+    "pending-invoices/",
+    views.pending_invoices,
+    name="pending_invoices",
+),
 
     # ---- Customer report ----
     path("reports/customers/", views.customer_report, name="customer_report"),
