@@ -21,6 +21,11 @@ class Invoice(models.Model):
         ("cancelled", "Cancelled"),
     ]
 
+    # ✅ NEW FIELD (ADD THIS)
+    invoice_number = models.PositiveIntegerField(
+        unique=True, blank=True, null=True
+    )
+
     customer = models.ForeignKey(
         Customer, on_delete=models.CASCADE, related_name="invoices"
     )
@@ -33,7 +38,6 @@ class Invoice(models.Model):
         max_digits=10, decimal_places=2, default=0
     )
 
-    # stored value (optional)
     total_amount = models.DecimalField(
         max_digits=10, decimal_places=2, default=0
     )
@@ -42,10 +46,25 @@ class Invoice(models.Model):
         max_length=20, choices=STATUS_CHOICES, default="unpaid"
     )
 
+    stock_reduced = models.BooleanField(default=False)
+
+
     objects = InvoiceManager()
 
+    # ✅ AUTO NUMBER LOGIC (ADD THIS)
+    def save(self, *args, **kwargs):
+        if not self.invoice_number:
+            last_invoice = Invoice.objects.order_by("-invoice_number").first()
+            if last_invoice and last_invoice.invoice_number:
+                self.invoice_number = last_invoice.invoice_number + 1
+            else:
+                self.invoice_number = 1
+        super().save(*args, **kwargs)
+
+    # ❌ OLD: Invoice #{self.id}
+    # ✅ NEW:
     def __str__(self):
-        return f"Invoice #{self.id} - {self.customer.name}"
+        return f"Invoice #{self.invoice_number}"
 
     # ---------- computed values ----------
 

@@ -25,7 +25,7 @@ class Payment(models.Model):
         related_name="payments"
     )
 
-    # 🔥 Invoice optional (used for auto allocation)
+    # 🔥 Invoice optional
     invoice = models.ForeignKey(
         Invoice,
         on_delete=models.CASCADE,
@@ -44,7 +44,6 @@ class Payment(models.Model):
         default="paid"
     )
 
-    # 🔥 Extra / advance amount flag
     is_advance = models.BooleanField(default=False)
 
     notes = models.TextField(blank=True, null=True)
@@ -65,11 +64,25 @@ class Payment(models.Model):
     # Save / Delete hooks
     # -----------------------
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
         super().save(*args, **kwargs)
 
-        # 🔥 Update invoice status only if linked
+        # 🔥 If linked to invoice
         if self.invoice_id:
-            self.invoice.update_status_from_payments()
+            invoice = self.invoice
+
+            # 🔥 FIRST PAYMENT → REDUCE STOCK (paid OR partial)
+            if is_new and not invoice.stock_reduced and self.status in ["paid", "partial"]:
+                for item in invoice.items.all():
+                    product = item.product
+                    product.stock -= item.quantity
+                    product.save()
+
+                invoice.stock_reduced = True
+                invoice.save(update_fields=["stock_reduced"])
+
+            # 🔥 Always update invoice status
+            invoice.update_status_from_payments()
 
     def delete(self, *args, **kwargs):
         invoice = self.invoice

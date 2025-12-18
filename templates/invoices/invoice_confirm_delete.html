@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
-{% block title %}Delete Invoice #{{ invoice.id }}{% endblock %}
+{% block title %}Delete Invoice #{{ invoice.invoice_number }}{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
 
-  <h2 class="mb-3 text-danger">Delete Invoice #{{ invoice.id }}</h2>
+  <h2 class="mb-3 text-danger">Delete Invoice #{{ invoice.invoice_number }}</h2>
 
   <div class="alert alert-warning">
       <strong>Warning!</strong> You are about to permanently delete this invoice.

@@ -142,7 +142,7 @@ def payment_list(request):
         Payment.objects
         .filter(invoice__isnull=False)   # 🔥 IMPORTANT FIX
         .select_related("invoice", "invoice__customer")
-        .order_by("-date", "-id")
+        .order_by("date", "id")
     )
 
     return render(
